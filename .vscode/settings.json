@@ -1,0 +1,31 @@
+{
+    "clangd.arguments": [
+        "--header-insertion=never",
+        "--completion-style=detailed",
+        "--function-arg-placeholders",
+        "--fallback-style=LLVM",
+        "--clang-tidy",
+        "--all-scopes-completion",
+        "--background-index",
+        "--pch-storage=memory",
+        "--log=error",
+        "-j=12",
+        "--compile-commands-dir=cmake-build-release"
+    ],
+    "clangd.checkUpdates": true,
+    "clangd.onConfigChanged": "restart",
+    "clangd.path": "${env:HOME}/usr/llvm/bin/clangd",
+
+    // C/C++ extension format settings
+    "C_Cpp.formatting": "clangFormat",
+    "[cpp]": {
+        "editor.defaultFormatter": "xaver.clang-format"
+    },
+    "[c]": {
+        "editor.defaultFormatter": "xaver.clang-format"
+    },
+    "clang-format.executable": "clang-format",
+    "clang-format.style": "file",
+    "editor.formatOnSave": true,
+    "editor.formatOnSaveMode": "file"
+}
