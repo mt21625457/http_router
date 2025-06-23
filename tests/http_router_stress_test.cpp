@@ -32,7 +32,8 @@ protected:
 // Performance test with a million routes
 TEST_F(HttpRouterStressTest, MillionRoutesPerformance) {
     const int NUM_ROUTES = 1000000;
-    const int NUM_LOOKUPS = 10000;
+    // Set lookup count to be equal to the cache size to properly test a hot cache scenario
+    const int NUM_LOOKUPS = 1000; // Corresponds to MAX_CACHE_SIZE in http_router.hpp
 
     // Use a single handler to save memory, as the handler itself is not the focus of this test.
     auto handler = std::make_shared<StressTestDummyHandler>(1);
