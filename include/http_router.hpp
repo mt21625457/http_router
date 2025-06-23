@@ -18,8 +18,58 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+#include <algorithm> // Required for std::transform
 
 #include "tsl/htrie_map.h"
+
+// Enum for HTTP methods
+enum class HttpMethod {
+    GET,
+    POST,
+    PUT,
+    DELETE,
+    PATCH,
+    HEAD,
+    OPTIONS,
+    CONNECT,
+    TRACE,
+    UNKNOWN
+};
+
+// Helper function to convert HttpMethod to string (useful for cache keys, debugging)
+inline std::string to_string(HttpMethod method) {
+    switch (method) {
+        case HttpMethod::GET:     return "GET";
+        case HttpMethod::POST:    return "POST";
+        case HttpMethod::PUT:     return "PUT";
+        case HttpMethod::DELETE:  return "DELETE";
+        case HttpMethod::PATCH:   return "PATCH";
+        case HttpMethod::HEAD:    return "HEAD";
+        case HttpMethod::OPTIONS: return "OPTIONS";
+        case HttpMethod::CONNECT: return "CONNECT";
+        case HttpMethod::TRACE:   return "TRACE";
+        default:                  return "UNKNOWN";
+    }
+}
+
+// Helper function to convert string to HttpMethod
+inline HttpMethod from_string(std::string_view s) {
+    std::string upper_s;
+    upper_s.reserve(s.length());
+    std::transform(s.begin(), s.end(), std::back_inserter(upper_s), ::toupper);
+
+    if (upper_s == "GET") return HttpMethod::GET;
+    if (upper_s == "POST") return HttpMethod::POST;
+    if (upper_s == "PUT") return HttpMethod::PUT;
+    if (upper_s == "DELETE") return HttpMethod::DELETE;
+    if (upper_s == "PATCH") return HttpMethod::PATCH;
+    if (upper_s == "HEAD") return HttpMethod::HEAD;
+    if (upper_s == "OPTIONS") return HttpMethod::OPTIONS;
+    if (upper_s == "CONNECT") return HttpMethod::CONNECT;
+    if (upper_s == "TRACE") return HttpMethod::TRACE;
+    return HttpMethod::UNKNOWN;
+}
+
 
 template <typename Handler>
 class http_router
@@ -50,19 +100,23 @@ private:
 
     // 混合数据结构策略
     // 1. 使用哈希表存储短路径和随机路径 (O(1)查找)
-    std::unordered_map<std::string, RouteInfo> static_hash_routes_;
+    // std::unordered_map<std::string, RouteInfo> static_hash_routes_;
+    std::unordered_map<HttpMethod, std::unordered_map<std::string, RouteInfo>> static_hash_routes_by_method_;
 
     // 2. 使用htrie_map存储有共同前缀的长路径 (前缀树优势)
-    tsl::htrie_map<char, RouteInfo> static_trie_routes_;
+    // tsl::htrie_map<char, RouteInfo> static_trie_routes_;
+    std::unordered_map<HttpMethod, tsl::htrie_map<char, RouteInfo>> static_trie_routes_by_method_;
 
     // 3. 参数化路由仍使用向量存储
-    std::vector<std::pair<std::string, RouteInfo>> param_routes_;
+    // std::vector<std::pair<std::string, RouteInfo>> param_routes_;
+    std::unordered_map<HttpMethod, std::vector<std::pair<std::string, RouteInfo>>> param_routes_by_method_;
 
     // 路径段数索引，用于加速参数化路由匹配
-    std::unordered_map<size_t, std::vector<size_t>> segment_index_;
+    // std::unordered_map<size_t, std::vector<size_t>> segment_index_;
+    std::unordered_map<HttpMethod, std::unordered_map<size_t, std::vector<size_t>>> segment_index_by_method_;
 
     // 路由缓存，提供O(1)路由查找
-    mutable std::unordered_map<std::string, CacheEntry> route_cache_;
+    mutable std::unordered_map<std::string, CacheEntry> route_cache_; // Cache key will include method
 
     // 路由缓存LRU列表，用于管理缓存容量
     mutable std::list<std::string> cache_lru_list_;
@@ -90,10 +144,10 @@ public:
      * @param handler       The handler to be called when the route matches
      *                      当路由匹配时调用的处理程序
      */
-    void add_route(const std::string &path, std::shared_ptr<Handler> handler)
+    void add_route(HttpMethod method, const std::string &path, std::shared_ptr<Handler> handler)
     {
         // Validate inputs
-        if (path.empty() || !handler) {
+        if (path.empty() || !handler || method == HttpMethod::UNKNOWN) {
             return;
         }
 
@@ -126,13 +180,14 @@ public:
             }
 
             // Store and index parameterized route
-            size_t index = param_routes_.size();
-            param_routes_.emplace_back(path, route_info);
+            auto& current_param_routes = param_routes_by_method_[method];
+            size_t index = current_param_routes.size();
+            current_param_routes.emplace_back(path, route_info);
 
             // 计算路径段数并索引
             std::vector<std::string> segments;
             split_path(path, segments);
-            segment_index_[segments.size()].push_back(index);
+            segment_index_by_method_[method][segments.size()].push_back(index);
         } else {
             // 静态路由 - 智能选择存储结构
             size_t segment_count = count_segments(path);
@@ -140,10 +195,10 @@ public:
             // 根据路径特征选择合适的数据结构
             if (path.length() <= SHORT_PATH_THRESHOLD || segment_count <= SEGMENT_THRESHOLD) {
                 // 短路径或段数少，使用哈希表 (O(1)查找)
-                static_hash_routes_[path] = route_info;
+                static_hash_routes_by_method_[method][path] = route_info;
             } else {
                 // 长路径且段数多，使用Trie树 (利用前缀共享优势)
-                static_trie_routes_.insert(path, route_info);
+                static_trie_routes_by_method_[method].insert(path, route_info);
             }
         }
 
@@ -171,11 +226,11 @@ public:
      * @return int         0 on successful match, -1 if no route matches
      *                     匹配成功返回0,没有匹配的路由返回-1
      */
-    int find_route(std::string_view path, std::shared_ptr<Handler> &handler,
+    int find_route(HttpMethod method, std::string_view path, std::shared_ptr<Handler> &handler,
                    std::map<std::string, std::string> &params,
                    std::map<std::string, std::string> &query_params)
     {
-        if (path.empty()) {
+        if (path.empty() || method == HttpMethod::UNKNOWN) {
             return -1;
         }
 
@@ -189,76 +244,84 @@ public:
 
         // 转换为标准字符串，用于查找
         std::string path_str(path_without_query);
+        std::string original_path_with_query(path); // Keep original path with query for cache key
 
         // 检查缓存是否有匹配路由，提供O(1)查找
         if (ENABLE_CACHE) {
-            if (check_route_cache(std::string(path), handler, params)) {
+            if (check_route_cache(method, original_path_with_query, handler, params)) {
                 return 0;
             }
         }
 
-        // 1. 首先检查哈希表 (最快 O(1))
-        auto hash_it = static_hash_routes_.find(path_str);
-        if (hash_it != static_hash_routes_.end()) {
-            handler = hash_it->second.handler;
-
-            // 更新路由缓存
-            if (ENABLE_CACHE) {
-                cache_route(std::string(path), handler, params);
+        // Select the correct set of routes based on the method
+        auto static_hash_routes_it = static_hash_routes_by_method_.find(method);
+        if (static_hash_routes_it != static_hash_routes_by_method_.end()) {
+            auto hash_it = static_hash_routes_it->second.find(path_str);
+            if (hash_it != static_hash_routes_it->second.end()) {
+                handler = hash_it->second.handler;
+                if (ENABLE_CACHE) {
+                    cache_route(method, original_path_with_query, handler, params);
+                }
+                return 0;
             }
-            return 0;
         }
 
-        // 2. 然后检查前缀树 (适合共享前缀的路径)
-        auto trie_it = static_trie_routes_.find(path_str);
-        if (trie_it != static_trie_routes_.end()) {
-            handler = trie_it.value().handler;
-
-            // 更新路由缓存
-            if (ENABLE_CACHE) {
-                cache_route(std::string(path), handler, params);
+        auto static_trie_routes_it = static_trie_routes_by_method_.find(method);
+        if (static_trie_routes_it != static_trie_routes_by_method_.end()) {
+            auto trie_it = static_trie_routes_it->second.find(path_str);
+            if (trie_it != static_trie_routes_it->second.end()) {
+                handler = trie_it.value().handler;
+                if (ENABLE_CACHE) {
+                    cache_route(method, original_path_with_query, handler, params);
+                }
+                return 0;
             }
-            return 0;
         }
 
-        // 3. 最后尝试参数化路由匹配
-        // 优化：先按段数筛选，减少匹配次数
-        std::vector<std::string> path_segments;
-        split_path(path_str, path_segments);
+        auto param_routes_method_it = param_routes_by_method_.find(method);
+        if (param_routes_method_it != param_routes_by_method_.end()) {
+            const auto& current_param_routes = param_routes_method_it->second;
+            auto segment_index_method_it = segment_index_by_method_.find(method);
+            const auto* current_segment_index_ptr = (segment_index_method_it != segment_index_by_method_.end()) ? &(segment_index_method_it->second) : nullptr;
 
-        // 首先尝试匹配相同段数的路由
-        auto segment_it = segment_index_.find(path_segments.size());
-        if (segment_it != segment_index_.end()) {
-            for (size_t idx : segment_it->second) {
-                const auto &route_pair = param_routes_[idx];
+            std::vector<std::string> path_segments;
+            split_path(path_str, path_segments);
+
+            bool found_in_segment_specific_check = false;
+            if (current_segment_index_ptr) {
+                auto segment_it = current_segment_index_ptr->find(path_segments.size());
+                if (segment_it != current_segment_index_ptr->end()) {
+                    for (size_t idx : segment_it->second) {
+                        if (idx < current_param_routes.size()) { // Bounds check
+                            const auto &route_pair = current_param_routes[idx];
+                            if (match_route(path_str, route_pair.first, route_pair.second, params)) {
+                                handler = route_pair.second.handler;
+                                if (ENABLE_CACHE) {
+                                    cache_route(method, original_path_with_query, handler, params);
+                                }
+                                return 0;
+                            }
+                        }
+                    }
+                    found_in_segment_specific_check = true;
+                }
+            }
+
+            for (const auto &route_pair : current_param_routes) {
+                 // If we already checked non-wildcard routes of this segment count via segment_index, skip them
+                if (found_in_segment_specific_check && !route_pair.second.has_wildcard) {
+                     std::vector<std::string> pattern_segments;
+                     split_path(route_pair.first, pattern_segments);
+                     if(pattern_segments.size() == path_segments.size()) continue;
+                }
+
                 if (match_route(path_str, route_pair.first, route_pair.second, params)) {
                     handler = route_pair.second.handler;
-
-                    // 更新路由缓存
                     if (ENABLE_CACHE) {
-                        cache_route(std::string(path), handler, params);
+                        cache_route(method, original_path_with_query, handler, params);
                     }
                     return 0;
                 }
-            }
-        }
-
-        // 尝试匹配通配符路由（可能有不同段数）
-        for (const auto &route_pair : param_routes_) {
-            // 跳过已检查过的相同段数路由
-            if (segment_it != segment_index_.end() && !route_pair.second.has_wildcard) {
-                continue;
-            }
-
-            if (route_pair.second.has_wildcard &&
-                match_route(path_str, route_pair.first, route_pair.second, params)) {
-                handler = route_pair.second.handler;
-
-                // 更新路由缓存
-                if (ENABLE_CACHE) {
-                    cache_route(std::string(path), handler, params);
-                }
-                return 0;
             }
         }
 
@@ -273,11 +336,17 @@ public:
     }
 
 private:
+    // Helper to generate cache key
+    std::string generate_cache_key(HttpMethod method, const std::string &path) const {
+        return to_string(method) + ":" + path;
+    }
+
     // 检查路由缓存并返回匹配结果
-    bool check_route_cache(const std::string &path, std::shared_ptr<Handler> &handler,
+    bool check_route_cache(HttpMethod method, const std::string &path, std::shared_ptr<Handler> &handler,
                            std::map<std::string, std::string> &params) const
     {
-        auto it = route_cache_.find(path);
+        std::string cache_key = generate_cache_key(method, path);
+        auto it = route_cache_.find(cache_key);
         if (it != route_cache_.end()) {
             // 命中缓存，直接返回结果
             handler = it->second.handler;
@@ -287,11 +356,22 @@ private:
             it->second.update_timestamp();
 
             // 将路径移到LRU列表前端
-            auto lru_it = std::find(cache_lru_list_.begin(), cache_lru_list_.end(), path);
+            // std::find on list is O(N), consider optimizing if this becomes a bottleneck
+            auto lru_it = std::find(cache_lru_list_.begin(), cache_lru_list_.end(), cache_key);
             if (lru_it != cache_lru_list_.end()) {
                 cache_lru_list_.erase(lru_it);
-                cache_lru_list_.push_front(path);
+                cache_lru_list_.push_front(cache_key);
             }
+            // else: If not in LRU list but in cache, it's an inconsistent state or was just pruned.
+            // For simplicity, we'll re-add it if it was missing, though ideally, this shouldn't happen frequently.
+            // However, prune_cache removes from route_cache first, then LRU list.
+            // If cache_key was just added and immediately accessed, it might not be in lru_list yet if it was full.
+            // Let's ensure it's added to LRU if found in cache.
+            // This case should be rare. If cache_lru_list_ doesn't contain it, but route_cache_ does,
+            // it means it was likely added when the cache was full and prune_cache was called,
+            // or it's a new item not yet in LRU.
+            // The current logic in cache_route handles adding to LRU.
+            // Here, we just need to ensure it's moved to front if found.
 
             return true;
         }
@@ -299,11 +379,12 @@ private:
     }
 
     // 将路由结果缓存
-    void cache_route(const std::string &path, const std::shared_ptr<Handler> &handler,
+    void cache_route(HttpMethod method, const std::string &path, const std::shared_ptr<Handler> &handler,
                      const std::map<std::string, std::string> &params) const
     {
+        std::string cache_key = generate_cache_key(method, path);
         // 检查路径是否已经在缓存中
-        auto it = route_cache_.find(path);
+        auto it = route_cache_.find(cache_key);
         if (it != route_cache_.end()) {
             // 更新现有缓存条目
             it->second.handler = handler;
@@ -311,30 +392,46 @@ private:
             it->second.update_timestamp();
 
             // 移动到LRU列表前端
-            auto lru_it = std::find(cache_lru_list_.begin(), cache_lru_list_.end(), path);
+            auto lru_it = std::find(cache_lru_list_.begin(), cache_lru_list_.end(), cache_key);
             if (lru_it != cache_lru_list_.end()) {
                 cache_lru_list_.erase(lru_it);
-                cache_lru_list_.push_front(path);
+                cache_lru_list_.push_front(cache_key);
             } else {
-                // 如果找不到就添加到前端（应该不会发生，但为安全起见）
-                cache_lru_list_.push_front(path);
+                // If not in LRU, but in cache (should be rare, e.g. after prune), add to LRU front.
+                // This also covers the case where it's a new item being updated.
+                cache_lru_list_.push_front(cache_key);
             }
             return;
         }
 
         // 如果缓存已满，清除最久未使用的条目
         if (route_cache_.size() >= MAX_CACHE_SIZE) {
-            prune_cache();
+            prune_cache(); // prune_cache itself uses cache_lru_list_ to find items to remove
         }
+
+        // Check again if cache has space after pruning (prune might not free up if MAX_CACHE_SIZE is 0)
+        if (route_cache_.size() >= MAX_CACHE_SIZE && MAX_CACHE_SIZE > 0) {
+             // If still full, something is wrong or MAX_CACHE_SIZE is too small.
+             // For now, we won't cache this item to prevent exceeding MAX_CACHE_SIZE.
+             // Alternatively, could log a warning.
+            return;
+        }
+
 
         // 添加到缓存
         CacheEntry entry;
         entry.handler = handler;
         entry.params = params;
-        entry.update_timestamp();
+        // entry.update_timestamp(); // Constructor already sets this
 
-        route_cache_[path] = entry;
-        cache_lru_list_.push_front(path);
+        route_cache_[cache_key] = entry; // This might create or update
+        // Ensure it's in LRU list and at the front
+        // Remove if it exists (it shouldn't if we are in this block, but defensive)
+        auto lru_it = std::find(cache_lru_list_.begin(), cache_lru_list_.end(), cache_key);
+        if (lru_it != cache_lru_list_.end()) {
+            cache_lru_list_.erase(lru_it);
+        }
+        cache_lru_list_.push_front(cache_key);
     }
 
     // 清理最久未使用的缓存条目
