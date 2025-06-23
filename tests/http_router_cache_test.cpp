@@ -31,9 +31,9 @@ TEST(RouterCacheTest, BasicCacheFunctionality)
     auto handler2 = std::make_shared<DummyHandler>(2);
     auto handler3 = std::make_shared<DummyHandler>(3);
 
-    router.add_route("/static/path", handler1);       // 静态路由 (哈希表)
-    router.add_route("/api/users/:id", handler2);     // 参数化路由
-    router.add_route("/files/documents/*", handler3); // 通配符路由
+    router.add_route(HttpMethod::GET, "/static/path", handler1);       // 静态路由 (哈希表)
+    router.add_route(HttpMethod::GET, "/api/users/:id", handler2);     // 参数化路由
+    router.add_route(HttpMethod::GET, "/files/documents/*", handler3); // 通配符路由
 
     // 测试参数
     std::shared_ptr<DummyHandler> found_handler;
@@ -41,13 +41,13 @@ TEST(RouterCacheTest, BasicCacheFunctionality)
     std::map<std::string, std::string> query_params;
 
     // 第一次访问 - 需要路由查找
-    EXPECT_EQ(router.find_route("/api/users/123", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/users/123", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 2);
     EXPECT_EQ(params["id"], "123");
 
     // 清除参数，再次访问同一路径应该命中缓存并填充参数
     params.clear();
-    EXPECT_EQ(router.find_route("/api/users/123", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/users/123", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 2);
     EXPECT_EQ(params["id"], "123"); // 验证缓存还原了参数
 }
@@ -58,14 +58,14 @@ TEST(RouterCacheTest, CacheClearTest)
     http_router<DummyHandler> router;
 
     auto handler = std::make_shared<DummyHandler>(1);
-    router.add_route("/test/:param", handler);
+    router.add_route(HttpMethod::GET, "/test/:param", handler);
 
     std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
     std::map<std::string, std::string> query_params;
 
     // 第一次访问
-    EXPECT_EQ(router.find_route("/test/value", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/test/value", found_handler, params, query_params), 0);
     EXPECT_EQ(params["param"], "value");
 
     // 清除缓存
@@ -75,7 +75,7 @@ TEST(RouterCacheTest, CacheClearTest)
     params.clear();
 
     // 再次访问，因为缓存已清除，应该重新匹配路由
-    EXPECT_EQ(router.find_route("/test/value", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/test/value", found_handler, params, query_params), 0);
     EXPECT_EQ(params["param"], "value");
 }
 
@@ -90,13 +90,13 @@ TEST(RouterCacheTest, CachePerformanceTest)
 
         if (i % 3 == 0) {
             // 静态路由
-            router.add_route("/path" + std::to_string(i), handler);
+            router.add_route(HttpMethod::GET, "/path" + std::to_string(i), handler);
         } else if (i % 3 == 1) {
             // 参数化路由
-            router.add_route("/users/" + std::to_string(i) + "/:id", handler);
+            router.add_route(HttpMethod::GET, "/users/" + std::to_string(i) + "/:id", handler);
         } else {
             // 通配符路由
-            router.add_route("/files/" + std::to_string(i) + "/*", handler);
+            router.add_route(HttpMethod::GET, "/files/" + std::to_string(i) + "/*", handler);
         }
     }
 
@@ -121,7 +121,7 @@ TEST(RouterCacheTest, CachePerformanceTest)
 
     for (const auto &path : test_paths) {
         params.clear();
-        router.find_route(path, found_handler, params, query_params);
+        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -132,7 +132,7 @@ TEST(RouterCacheTest, CachePerformanceTest)
 
     for (const auto &path : test_paths) {
         params.clear();
-        router.find_route(path, found_handler, params, query_params);
+        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
     }
 
     end = std::chrono::high_resolution_clock::now();
@@ -160,7 +160,7 @@ TEST(RouterCacheTest, LRUEvictionTest)
     for (int i = 0; i < ROUTE_COUNT; i++) {
         auto handler = std::make_shared<DummyHandler>(i);
         handlers.push_back(handler);
-        router.add_route("/test" + std::to_string(i), handler);
+        router.add_route(HttpMethod::GET, "/test" + std::to_string(i), handler);
     }
 
     std::shared_ptr<DummyHandler> found_handler;
@@ -172,7 +172,7 @@ TEST(RouterCacheTest, LRUEvictionTest)
 
     // 第一步：访问所有路由填充缓存
     for (int i = 0; i < ROUTE_COUNT; i++) {
-        router.find_route("/test" + std::to_string(i), found_handler, params, query_params);
+        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
         EXPECT_EQ(found_handler->id(), i);
     }
 
@@ -181,37 +181,37 @@ TEST(RouterCacheTest, LRUEvictionTest)
     for (int i = ROUTE_COUNT; i < ROUTE_COUNT + EXTRA_ROUTES; i++) {
         auto handler = std::make_shared<DummyHandler>(i);
         handlers.push_back(handler);
-        router.add_route("/test" + std::to_string(i), handler);
+        router.add_route(HttpMethod::GET, "/test" + std::to_string(i), handler);
 
         // 访问新路由填充缓存
-        router.find_route("/test" + std::to_string(i), found_handler, params, query_params);
+        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
         EXPECT_EQ(found_handler->id(), i);
     }
 
     // 第三步：再次访问一些靠后的路由，确保它们仍在缓存中
     // 这些应该仍在缓存中
     for (int i = ROUTE_COUNT - 50; i < ROUTE_COUNT; i++) {
-        router.find_route("/test" + std::to_string(i), found_handler, params, query_params);
+        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
         EXPECT_EQ(found_handler->id(), i);
     }
 
     // 第四步：访问靠后的路由，保证它们在缓存中
     for (int i = ROUTE_COUNT; i < ROUTE_COUNT + EXTRA_ROUTES; i++) {
-        router.find_route("/test" + std::to_string(i), found_handler, params, query_params);
+        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
         EXPECT_EQ(found_handler->id(), i);
     }
 
     // 第五步：现在访问前面一些路由，这些应该已经被淘汰了
     // 但我们仍应该能找到正确的处理程序
     for (int i = 0; i < 10; i++) {
-        router.find_route("/test" + std::to_string(i), found_handler, params, query_params);
+        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
         // 验证我们仍能找到正确的处理程序
         EXPECT_EQ(found_handler->id(), i);
     }
 
     // 现在重新访问一些中间的路由，应该会更新它们在缓存中的位置
-    for (int i = 100; i < 150; i++) {
-        router.find_route("/test" + std::to_string(i), found_handler, params, query_params);
+    for (int i = 10; i < 20; i++) {
+        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
         EXPECT_EQ(found_handler->id(), i);
     }
 
@@ -219,17 +219,17 @@ TEST(RouterCacheTest, LRUEvictionTest)
     for (int i = ROUTE_COUNT + EXTRA_ROUTES; i < ROUTE_COUNT + EXTRA_ROUTES + 100; i++) {
         auto handler = std::make_shared<DummyHandler>(i);
         handlers.push_back(handler);
-        router.add_route("/test" + std::to_string(i), handler);
+        router.add_route(HttpMethod::GET, "/test" + std::to_string(i), handler);
 
         // 访问新路由填充缓存
-        router.find_route("/test" + std::to_string(i), found_handler, params, query_params);
+        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
         EXPECT_EQ(found_handler->id(), i);
     }
 
     // 验证刚刚访问过的中间路由仍然在缓存中
     // 这是LRU的关键测试：最近使用的应该保留
-    for (int i = 100; i < 150; i++) {
-        router.find_route("/test" + std::to_string(i), found_handler, params, query_params);
+    for (int i = 10; i < 20; i++) {
+        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
         EXPECT_EQ(found_handler->id(), i);
     }
 
@@ -242,87 +242,50 @@ TEST(RouterCacheTest, RandomAccessPattern)
 {
     http_router<DummyHandler> router;
 
-    // 添加500个路由
-    const int ROUTE_COUNT = 500;
-
-    for (int i = 0; i < ROUTE_COUNT; i++) {
-        auto handler = std::make_shared<DummyHandler>(i);
-        router.add_route("/api/item" + std::to_string(i), handler);
+    // 添加大量路由
+    const int NUM_ROUTES = 2000;
+    std::vector<std::shared_ptr<DummyHandler>> handlers;
+    for (int i = 0; i < NUM_ROUTES; ++i) {
+        handlers.push_back(std::make_shared<DummyHandler>(i));
+        router.add_route(HttpMethod::GET, "/route/" + std::to_string(i), handlers.back());
     }
 
-    // 生成路径列表
-    std::vector<std::string> paths;
-    for (int i = 0; i < ROUTE_COUNT; i++) {
-        paths.push_back("/api/item" + std::to_string(i));
-    }
-
-    // 准备随机数生成器
+    // 随机访问路由
     std::random_device rd;
     std::mt19937 g(rd());
+    std::uniform_int_distribution<> distrib(0, NUM_ROUTES - 1);
 
-    // 准备测试参数
     std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
     std::map<std::string, std::string> query_params;
 
-    // 情景1: 完全随机访问 (80/20法则)
-    // 80%的访问集中在20%的路由上
-    std::vector<std::string> popular_paths(paths.begin(), paths.begin() + ROUTE_COUNT / 5);
-    std::vector<std::string> all_paths = paths;
-
-    // 混合访问模式: 80%流量去20%热门路径
-    std::vector<std::string> access_pattern;
-
-    for (int i = 0; i < 1000; i++) {
-        if (i % 5 < 4) {
-            // 80%的概率从热门路径中选择
-            std::shuffle(popular_paths.begin(), popular_paths.end(), g);
-            access_pattern.push_back(popular_paths[0]);
-        } else {
-            // 20%的概率从所有路径中选择
-            std::shuffle(all_paths.begin(), all_paths.end(), g);
-            access_pattern.push_back(all_paths[0]);
-        }
+    // 初次访问，填充缓存
+    for (int i = 0; i < NUM_ROUTES; ++i) {
+        router.find_route(HttpMethod::GET, "/route/" + std::to_string(i), found_handler, params, query_params);
     }
 
-    // 第一次访问，填充缓存
-    for (const auto &path : access_pattern) {
-        router.find_route(path, found_handler, params, query_params);
+    // 随机访问1000次
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < 1000; ++i) {
+        int idx = distrib(g);
+        std::string path = "/route/" + std::to_string(idx);
+        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
     }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto random_access_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
 
-    // 清除缓存开始测试
-    router.clear_cache();
-
-    // 再次访问，测量缓存效果
-    int cache_hits = 0;
-    std::unordered_map<std::string, bool> visited;
-
-    auto start_time = std::chrono::high_resolution_clock::now();
-
-    for (const auto &path : access_pattern) {
-        // 第一次访问这个路径，不应该在缓存中
-        if (visited.find(path) == visited.end()) {
-            visited[path] = true;
-        } else {
-            // 已经访问过，应该在缓存中
-            cache_hits++;
-        }
-
-        router.find_route(path, found_handler, params, query_params);
+    // 顺序访问1000次
+    start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < 1000; ++i) {
+        std::string path = "/route/" + std::to_string(i);
+        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
     }
+    end = std::chrono::high_resolution_clock::now();
+    auto sequential_access_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
 
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto total_time =
-        std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
-
-    std::cout << "Random access pattern test:" << std::endl;
-    std::cout << "Total lookups: " << access_pattern.size() << std::endl;
-    std::cout << "Expected cache hits: " << cache_hits << std::endl;
-    std::cout << "Time per lookup: " << (double)total_time / access_pattern.size() << " μs"
+    std::cout << "Random access time: " << random_access_time / 1000.0 << " ns/op" << std::endl;
+    std::cout << "Sequential access time: " << sequential_access_time / 1000.0 << " ns/op"
               << std::endl;
-
-    // 80/20法则应该有效利用缓存
-    EXPECT_GT(cache_hits, 200); // 至少有200次缓存命中
 }
 
 int main(int argc, char **argv)

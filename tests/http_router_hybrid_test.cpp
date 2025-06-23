@@ -31,19 +31,19 @@ TEST(HybridRoutingTest, BasicHybridRouting)
     auto h3 = std::make_shared<DummyHandler>(3);
 
     // 这些路由应该被存储在哈希表中
-    router.add_route("/api", h1);   // 短路径
-    router.add_route("/about", h1); // 短路径
-    router.add_route("/login", h1); // 短路径
+    router.add_route(HttpMethod::GET, "/api", h1);   // 短路径
+    router.add_route(HttpMethod::GET, "/about", h1); // 短路径
+    router.add_route(HttpMethod::GET, "/login", h1); // 短路径
 
     // 这些路由应该被存储在Trie树中
-    router.add_route("/api/users/profiles/settings", h2);         // 长路径
-    router.add_route("/api/users/profiles/photos", h2);           // 长路径
-    router.add_route("/api/users/profiles/friends/requests", h2); // 长路径
+    router.add_route(HttpMethod::GET, "/api/users/profiles/settings", h2);         // 长路径
+    router.add_route(HttpMethod::GET, "/api/users/profiles/photos", h2);           // 长路径
+    router.add_route(HttpMethod::GET, "/api/users/profiles/friends/requests", h2); // 长路径
 
     // 这些应该被存储为参数化路由
-    router.add_route("/users/:userId", h3);              // 参数化路由
-    router.add_route("/api/posts/:postId/comments", h3); // 参数化路由
-    router.add_route("/files/*", h3);                    // 通配符路由
+    router.add_route(HttpMethod::GET, "/users/:userId", h3);              // 参数化路由
+    router.add_route(HttpMethod::GET, "/api/posts/:postId/comments", h3); // 参数化路由
+    router.add_route(HttpMethod::GET, "/files/*", h3);                    // 通配符路由
 
     // 测试参数
     std::shared_ptr<DummyHandler> found_handler;
@@ -51,18 +51,18 @@ TEST(HybridRoutingTest, BasicHybridRouting)
     std::map<std::string, std::string> query_params;
 
     // 测试哈希表路由
-    EXPECT_EQ(router.find_route("/api", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 1);
 
     // 测试Trie树路由
     params.clear();
     EXPECT_EQ(
-        router.find_route("/api/users/profiles/settings", found_handler, params, query_params), 0);
+        router.find_route(HttpMethod::GET, "/api/users/profiles/settings", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 2);
 
     // 测试参数化路由
     params.clear();
-    EXPECT_EQ(router.find_route("/users/42", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/users/42", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 3);
     EXPECT_EQ(params["userId"], "42");
 }
@@ -83,25 +83,25 @@ TEST(HybridRoutingTest, RoutingEfficiency)
     // 添加短路径 (哈希表)
     for (int i = 0; i < 200; i++) {
         std::string path = "/short" + std::to_string(i);
-        router.add_route(path, handlers[i]);
+        router.add_route(HttpMethod::GET, path, handlers[i]);
     }
 
     // 添加长路径 (Trie树)
     for (int i = 200; i < 500; i++) {
         std::string path = "/api/users/profiles/settings/" + std::to_string(i);
-        router.add_route(path, handlers[i]);
+        router.add_route(HttpMethod::GET, path, handlers[i]);
     }
 
     // 添加参数化路由
     for (int i = 500; i < 800; i++) {
         std::string path = "/users/" + std::to_string(i) + "/:id";
-        router.add_route(path, handlers[i]);
+        router.add_route(HttpMethod::GET, path, handlers[i]);
     }
 
     // 添加通配符路由
     for (int i = 800; i < NUM_ROUTES; i++) {
         std::string path = "/files/" + std::to_string(i) + "/*";
-        router.add_route(path, handlers[i]);
+        router.add_route(HttpMethod::GET, path, handlers[i]);
     }
 
     // 测试参数
@@ -113,7 +113,7 @@ TEST(HybridRoutingTest, RoutingEfficiency)
     auto start_time = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < 200; i++) {
         std::string path = "/short" + std::to_string(i);
-        router.find_route(path, found_handler, params, query_params);
+        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
     }
     auto end_time = std::chrono::high_resolution_clock::now();
     auto hash_time =
@@ -123,7 +123,7 @@ TEST(HybridRoutingTest, RoutingEfficiency)
     start_time = std::chrono::high_resolution_clock::now();
     for (int i = 200; i < 500; i++) {
         std::string path = "/api/users/profiles/settings/" + std::to_string(i);
-        router.find_route(path, found_handler, params, query_params);
+        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
     }
     end_time = std::chrono::high_resolution_clock::now();
     auto trie_time =
@@ -133,7 +133,7 @@ TEST(HybridRoutingTest, RoutingEfficiency)
     start_time = std::chrono::high_resolution_clock::now();
     for (int i = 500; i < 800; i++) {
         std::string path = "/users/" + std::to_string(i) + "/123";
-        router.find_route(path, found_handler, params, query_params);
+        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
     }
     end_time = std::chrono::high_resolution_clock::now();
     auto param_time =
@@ -158,8 +158,8 @@ TEST(HybridRoutingTest, RoutingPriority)
     auto param_handler = std::make_shared<DummyHandler>(2);
 
     // 添加静态和参数化路由到同一路径模式
-    router.add_route("/api/users", static_handler);    // 静态路由
-    router.add_route("/api/:resource", param_handler); // 参数化路由
+    router.add_route(HttpMethod::GET, "/api/users", static_handler);    // 静态路由
+    router.add_route(HttpMethod::GET, "/api/:resource", param_handler); // 参数化路由
 
     // 测试参数
     std::shared_ptr<DummyHandler> found_handler;
@@ -167,12 +167,12 @@ TEST(HybridRoutingTest, RoutingPriority)
     std::map<std::string, std::string> query_params;
 
     // 测试路由匹配优先级 - 静态路由应该优先于参数化路由
-    EXPECT_EQ(router.find_route("/api/users", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/users", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 1); // 应该匹配静态路由
 
     // 测试参数化路由
     params.clear();
-    EXPECT_EQ(router.find_route("/api/products", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/products", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 2); // 应该匹配参数化路由
     EXPECT_EQ(params["resource"], "products");
 }
@@ -188,21 +188,21 @@ TEST(HybridRoutingTest, SegmentIndexingOptimization)
     auto handler3 = std::make_shared<DummyHandler>(3);
 
     // 1段路由
-    router.add_route("/:param", handler1);
+    router.add_route(HttpMethod::GET, "/:param", handler1);
 
     // 2段路由
     for (int i = 0; i < 100; i++) {
-        router.add_route("/test" + std::to_string(i) + "/:param", handler1);
+        router.add_route(HttpMethod::GET, "/test" + std::to_string(i) + "/:param", handler1);
     }
 
     // 3段路由
     for (int i = 0; i < 100; i++) {
-        router.add_route("/api/:resource/:id" + std::to_string(i), handler2);
+        router.add_route(HttpMethod::GET, "/api/:resource/:id" + std::to_string(i), handler2);
     }
 
     // 4段路由
     for (int i = 0; i < 100; i++) {
-        router.add_route("/api/v1/:resource/:id" + std::to_string(i), handler3);
+        router.add_route(HttpMethod::GET, "/api/v1/:resource/:id" + std::to_string(i), handler3);
     }
 
     // 测试参数
@@ -215,7 +215,7 @@ TEST(HybridRoutingTest, SegmentIndexingOptimization)
 
     for (int i = 0; i < 20; i++) {
         params.clear();
-        EXPECT_EQ(router.find_route("/api/users/id" + std::to_string(i), found_handler, params,
+        EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/users/id" + std::to_string(i), found_handler, params,
                                     query_params),
                   0);
         EXPECT_EQ(found_handler->id(), 2);
@@ -245,7 +245,7 @@ TEST(HybridRoutingTest, TriePrefixSharing)
 
         // 所有路由共享 "/api/v1/users/profiles" 前缀
         std::string path = "/api/v1/users/profiles/setting" + std::to_string(i);
-        router.add_route(path, handlers[i]);
+        router.add_route(HttpMethod::GET, path, handlers[i]);
     }
 
     // 测试参数
@@ -263,7 +263,7 @@ TEST(HybridRoutingTest, TriePrefixSharing)
     for (int i = 0; i < 100; i++) {
         int idx = distrib(gen);
         std::string path = "/api/v1/users/profiles/setting" + std::to_string(idx);
-        router.find_route(path, found_handler, params, query_params);
+        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
         EXPECT_EQ(found_handler->id(), idx);
     }
 

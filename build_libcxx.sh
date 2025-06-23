@@ -4,7 +4,7 @@
 export CC=${HOME}/usr/llvm/bin/clang
 export CXX=${HOME}/usr/llvm/bin/clang++
 
-export GTEST_INSTALL_PATH=${HOME}/usr/xbase-libcxx
+export LIBBASE_PATH=${HOME}/usr/libbase-osx-dev
 
 
 cmake -B cmake-build-release -G Ninja \
@@ -14,6 +14,7 @@ cmake -B cmake-build-release -G Ninja \
     -DCMAKE_CXX_FLAGS="-std=c++20 -stdlib=libc++" \
     -DCMAKE_CXX_STANDARD=20 \
     -DCMAKE_CXX_STANDARD_REQUIRED=ON \
-    -DCMAKE_PREFIX_PATH=${GTEST_INSTALL_PATH}/lib/cmake \
+    -DCMAKE_PREFIX_PATH=${LIBBASE_PATH}/lib/cmake \
+    -DLIBBASE_PATH=${LIBBASE_PATH}
 
 ninja -C cmake-build-release 

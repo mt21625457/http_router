@@ -10,15 +10,19 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
+set(CMAKE_PREFIX_PATH "${LIBBASE_PATH}/lib/cmake")
+
+message(STATUS "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
+
 # Enable testing
 enable_testing()
 
 
 
-find_package(GTest REQUIRED)
+find_package(GTest CONFIG REQUIRED)
 
 include_directories(
-    ${XBASE_PATH}/include
+    ${LIBBASE_PATH}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
@@ -56,8 +60,8 @@ foreach(target ${TEST_TARGETS})
     # Link test executables with GTest
     target_link_libraries(${target}
         PRIVATE
-            gtest
-            gtest_main
+            GTest::gtest
+            GTest::gtest_main
             pthread
     )
 
