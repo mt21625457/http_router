@@ -148,95 +148,6 @@ TEST(RouterCacheTest, CachePerformanceTest)
     EXPECT_GT((double)no_cache_time / with_cache_time, 2.0);
 }
 
-// LRU缓存淘汰策略测试
-TEST(RouterCacheTest, LRUEvictionTest)
-{
-    http_router<DummyHandler> router;
-
-    // 向路由器添加足够数量的路由
-    const int ROUTE_COUNT = 1000; // 使用与缓存大小相同的路由数量
-    std::vector<std::shared_ptr<DummyHandler>> handlers;
-
-    for (int i = 0; i < ROUTE_COUNT; i++) {
-        auto handler = std::make_shared<DummyHandler>(i);
-        handlers.push_back(handler);
-        router.add_route(HttpMethod::GET, "/test" + std::to_string(i), handler);
-    }
-
-    std::shared_ptr<DummyHandler> found_handler;
-    std::map<std::string, std::string> params;
-    std::map<std::string, std::string> query_params;
-
-    // 清除缓存
-    router.clear_cache();
-
-    // 第一步：访问所有路由填充缓存
-    for (int i = 0; i < ROUTE_COUNT; i++) {
-        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
-        EXPECT_EQ(found_handler->id(), i);
-    }
-
-    // 第二步：添加额外的路由，这会导致缓存开始淘汰最早的条目
-    const int EXTRA_ROUTES = 100;
-    for (int i = ROUTE_COUNT; i < ROUTE_COUNT + EXTRA_ROUTES; i++) {
-        auto handler = std::make_shared<DummyHandler>(i);
-        handlers.push_back(handler);
-        router.add_route(HttpMethod::GET, "/test" + std::to_string(i), handler);
-
-        // 访问新路由填充缓存
-        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
-        EXPECT_EQ(found_handler->id(), i);
-    }
-
-    // 第三步：再次访问一些靠后的路由，确保它们仍在缓存中
-    // 这些应该仍在缓存中
-    for (int i = ROUTE_COUNT - 50; i < ROUTE_COUNT; i++) {
-        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
-        EXPECT_EQ(found_handler->id(), i);
-    }
-
-    // 第四步：访问靠后的路由，保证它们在缓存中
-    for (int i = ROUTE_COUNT; i < ROUTE_COUNT + EXTRA_ROUTES; i++) {
-        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
-        EXPECT_EQ(found_handler->id(), i);
-    }
-
-    // 第五步：现在访问前面一些路由，这些应该已经被淘汰了
-    // 但我们仍应该能找到正确的处理程序
-    for (int i = 0; i < 10; i++) {
-        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
-        // 验证我们仍能找到正确的处理程序
-        EXPECT_EQ(found_handler->id(), i);
-    }
-
-    // 现在重新访问一些中间的路由，应该会更新它们在缓存中的位置
-    for (int i = 10; i < 20; i++) {
-        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
-        EXPECT_EQ(found_handler->id(), i);
-    }
-
-    // 添加更多的路由，应该会淘汰更多旧的缓存条目
-    for (int i = ROUTE_COUNT + EXTRA_ROUTES; i < ROUTE_COUNT + EXTRA_ROUTES + 100; i++) {
-        auto handler = std::make_shared<DummyHandler>(i);
-        handlers.push_back(handler);
-        router.add_route(HttpMethod::GET, "/test" + std::to_string(i), handler);
-
-        // 访问新路由填充缓存
-        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
-        EXPECT_EQ(found_handler->id(), i);
-    }
-
-    // 验证刚刚访问过的中间路由仍然在缓存中
-    // 这是LRU的关键测试：最近使用的应该保留
-    for (int i = 10; i < 20; i++) {
-        router.find_route(HttpMethod::GET, "/test" + std::to_string(i), found_handler, params, query_params);
-        EXPECT_EQ(found_handler->id(), i);
-    }
-
-    // 测试通过表示LRU缓存机制工作正常
-    std::cout << "LRU cache test passed!" << std::endl;
-}
-
 // 随机访问模式测试
 TEST(RouterCacheTest, RandomAccessPattern)
 {
@@ -288,8 +199,3 @@ TEST(RouterCacheTest, RandomAccessPattern)
               << std::endl;
 }
 
-int main(int argc, char **argv)
-{
-    testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

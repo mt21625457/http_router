@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(http_router VERSION 1.0)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ##设置生成clangd的配置文件
@@ -27,57 +27,28 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# Define test executables
+# Define a single test executable that includes all test source files
 set(TEST_TARGETS
-    http_router_test
-    http_router_cache_test
-    http_router_hybrid_test
+    http_router_tests
 )
 
-# Add main router test executable
-add_executable(http_router_test
+# Add a single test executable with all test sources
+add_executable(http_router_tests
     tests/http_router_test.cpp
-)
-
-# Add router cache test executable
-add_executable(http_router_cache_test
     tests/http_router_cache_test.cpp
-)
-
-# Add hybrid routing test executable
-add_executable(http_router_hybrid_test
     tests/http_router_hybrid_test.cpp
+    tests/http_router_adv_test.cpp
+    tests/http_router_stress_test.cpp
 )
 
-# Configure link directories for all test targets
-foreach(target ${TEST_TARGETS})
-    target_link_directories(
-        ${target}
-        PRIVATE
-            ${XBASE_PATH}/lib
-    )
-
-    # Link test executables with GTest
-    target_link_libraries(${target}
-        PRIVATE
-            GTest::gtest
-            GTest::gtest_main
-            pthread
-    )
-
-    # Add test to CTest
-    add_test(NAME ${target} COMMAND ${target})
-endforeach()
-
-# Install documentation
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/doc/
-        DESTINATION share/doc/http_router
-        FILES_MATCHING PATTERN "*.md" PATTERN "*.html" PATTERN "*.pdf")
+# Link test executables with GTest
+target_link_libraries(${TEST_TARGETS}
+    PUBLIC
+        GTest::gtest
+        GTest::gtest_main
+        pthread
+)
 
 
-# 安装include 下所有的头文件 
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
-        DESTINATION include/http_router
-        FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
 
 

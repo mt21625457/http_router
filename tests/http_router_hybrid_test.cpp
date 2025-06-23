@@ -277,8 +277,3 @@ TEST(HybridRoutingTest, TriePrefixSharing)
     // 仅限性能测试，不进行硬性断言
 }
 
-int main(int argc, char **argv)
-{
-    testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

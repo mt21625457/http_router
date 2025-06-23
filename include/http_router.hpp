@@ -89,13 +89,8 @@ private:
     {
         std::shared_ptr<Handler> handler;
         std::map<std::string, std::string> params;
-
-        // 用于LRU淘汰策略的时间戳
-        std::chrono::steady_clock::time_point last_accessed;
-
-        CacheEntry() : last_accessed(std::chrono::steady_clock::now()) {}
-
-        void update_timestamp() { last_accessed = std::chrono::steady_clock::now(); }
+        // Store an iterator to the key in the LRU list for O(1) updates
+        std::list<std::string>::iterator lru_it;
     };
 
     // 混合数据结构策略
@@ -151,14 +146,17 @@ public:
             return;
         }
 
+        std::string normalized_path = path;
+        normalize_path(normalized_path);
+
         // 创建路由信息
         RouteInfo route_info;
         route_info.handler = handler;
 
         // Check if the path contains parameters or wildcards
-        if (path.find(':') != std::string::npos || path.find('*') != std::string::npos) {
+        if (normalized_path.find(':') != std::string::npos || normalized_path.find('*') != std::string::npos) {
             // Parse parameter names and check for wildcards
-            std::string pattern_path = path;
+            std::string pattern_path = normalized_path;
             size_t pos = 0;
 
             // Find and store parameter names
@@ -182,23 +180,23 @@ public:
             // Store and index parameterized route
             auto& current_param_routes = param_routes_by_method_[method];
             size_t index = current_param_routes.size();
-            current_param_routes.emplace_back(path, route_info);
+            current_param_routes.emplace_back(normalized_path, route_info);
 
             // 计算路径段数并索引
             std::vector<std::string> segments;
-            split_path(path, segments);
+            split_path(normalized_path, segments);
             segment_index_by_method_[method][segments.size()].push_back(index);
         } else {
             // 静态路由 - 智能选择存储结构
-            size_t segment_count = count_segments(path);
+            size_t segment_count = count_segments(normalized_path);
 
             // 根据路径特征选择合适的数据结构
-            if (path.length() <= SHORT_PATH_THRESHOLD || segment_count <= SEGMENT_THRESHOLD) {
+            if (normalized_path.length() <= SHORT_PATH_THRESHOLD || segment_count <= SEGMENT_THRESHOLD) {
                 // 短路径或段数少，使用哈希表 (O(1)查找)
-                static_hash_routes_by_method_[method][path] = route_info;
+                static_hash_routes_by_method_[method][normalized_path] = route_info;
             } else {
                 // 长路径且段数多，使用Trie树 (利用前缀共享优势)
-                static_trie_routes_by_method_[method].insert(path, route_info);
+                static_trie_routes_by_method_[method].insert(normalized_path, route_info);
             }
         }
 
@@ -244,6 +242,7 @@ public:
 
         // 转换为标准字符串，用于查找
         std::string path_str(path_without_query);
+        normalize_path(path_str);
         std::string original_path_with_query(path); // Keep original path with query for cache key
 
         // 检查缓存是否有匹配路由，提供O(1)查找
@@ -336,6 +335,40 @@ public:
     }
 
 private:
+    // 规范化路径，移除多余和尾部的斜杠
+    static void normalize_path(std::string& path) {
+        if (path.empty()) {
+            path = "/";
+            return;
+        }
+
+        std::string cleaned_path;
+        cleaned_path.reserve(path.length());
+
+        if (path[0] != '/') {
+            cleaned_path += '/';
+        }
+
+        char last_char = 0;
+        for (char c : path) {
+            if (c == '/' && last_char == '/') {
+                continue;
+            }
+            cleaned_path += c;
+            last_char = c;
+        }
+
+        if (cleaned_path.length() > 1 && cleaned_path.back() == '/') {
+            cleaned_path.pop_back();
+        }
+        
+        if (cleaned_path.empty()) {
+            path = "/";
+        } else {
+            path = cleaned_path;
+        }
+    }
+
     // Helper to generate cache key
     std::string generate_cache_key(HttpMethod method, const std::string &path) const {
         return to_string(method) + ":" + path;
@@ -352,26 +385,10 @@ private:
             handler = it->second.handler;
             params = it->second.params;
 
-            // 更新访问时间戳（LRU策略）
-            it->second.update_timestamp();
-
-            // 将路径移到LRU列表前端
-            // std::find on list is O(N), consider optimizing if this becomes a bottleneck
-            auto lru_it = std::find(cache_lru_list_.begin(), cache_lru_list_.end(), cache_key);
-            if (lru_it != cache_lru_list_.end()) {
-                cache_lru_list_.erase(lru_it);
-                cache_lru_list_.push_front(cache_key);
-            }
-            // else: If not in LRU list but in cache, it's an inconsistent state or was just pruned.
-            // For simplicity, we'll re-add it if it was missing, though ideally, this shouldn't happen frequently.
-            // However, prune_cache removes from route_cache first, then LRU list.
-            // If cache_key was just added and immediately accessed, it might not be in lru_list yet if it was full.
-            // Let's ensure it's added to LRU if found in cache.
-            // This case should be rare. If cache_lru_list_ doesn't contain it, but route_cache_ does,
-            // it means it was likely added when the cache was full and prune_cache was called,
-            // or it's a new item not yet in LRU.
-            // The current logic in cache_route handles adding to LRU.
-            // Here, we just need to ensure it's moved to front if found.
+            // O(1) complexity update to LRU list by moving the accessed item to the front.
+            cache_lru_list_.erase(it->second.lru_it);
+            cache_lru_list_.push_front(cache_key);
+            it->second.lru_it = cache_lru_list_.begin();
 
             return true;
         }
@@ -383,55 +400,37 @@ private:
                      const std::map<std::string, std::string> &params) const
     {
         std::string cache_key = generate_cache_key(method, path);
-        // 检查路径是否已经在缓存中
         auto it = route_cache_.find(cache_key);
+        
+        // 如果条目已存在，则更新并移到最前
         if (it != route_cache_.end()) {
-            // 更新现有缓存条目
+            // 更新数据
             it->second.handler = handler;
             it->second.params = params;
-            it->second.update_timestamp();
-
-            // 移动到LRU列表前端
-            auto lru_it = std::find(cache_lru_list_.begin(), cache_lru_list_.end(), cache_key);
-            if (lru_it != cache_lru_list_.end()) {
-                cache_lru_list_.erase(lru_it);
-                cache_lru_list_.push_front(cache_key);
-            } else {
-                // If not in LRU, but in cache (should be rare, e.g. after prune), add to LRU front.
-                // This also covers the case where it's a new item being updated.
-                cache_lru_list_.push_front(cache_key);
-            }
+            // 移到LRU列表的前端
+            cache_lru_list_.erase(it->second.lru_it);
+            cache_lru_list_.push_front(cache_key);
+            it->second.lru_it = cache_lru_list_.begin();
             return;
         }
 
         // 如果缓存已满，清除最久未使用的条目
         if (route_cache_.size() >= MAX_CACHE_SIZE) {
-            prune_cache(); // prune_cache itself uses cache_lru_list_ to find items to remove
+            prune_cache(); 
         }
 
-        // Check again if cache has space after pruning (prune might not free up if MAX_CACHE_SIZE is 0)
+        // 再次检查空间，防止MAX_CACHE_SIZE为0或prune失败
         if (route_cache_.size() >= MAX_CACHE_SIZE && MAX_CACHE_SIZE > 0) {
-             // If still full, something is wrong or MAX_CACHE_SIZE is too small.
-             // For now, we won't cache this item to prevent exceeding MAX_CACHE_SIZE.
-             // Alternatively, could log a warning.
             return;
         }
 
-
-        // 添加到缓存
+        // 添加新条目到缓存
+        cache_lru_list_.push_front(cache_key);
         CacheEntry entry;
         entry.handler = handler;
         entry.params = params;
-        // entry.update_timestamp(); // Constructor already sets this
-
-        route_cache_[cache_key] = entry; // This might create or update
-        // Ensure it's in LRU list and at the front
-        // Remove if it exists (it shouldn't if we are in this block, but defensive)
-        auto lru_it = std::find(cache_lru_list_.begin(), cache_lru_list_.end(), cache_key);
-        if (lru_it != cache_lru_list_.end()) {
-            cache_lru_list_.erase(lru_it);
-        }
-        cache_lru_list_.push_front(cache_key);
+        entry.lru_it = cache_lru_list_.begin();
+        route_cache_[cache_key] = std::move(entry);
     }
 
     // 清理最久未使用的缓存条目
