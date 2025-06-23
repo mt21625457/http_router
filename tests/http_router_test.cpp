@@ -29,25 +29,25 @@ TEST(HttpRouterTest, AddAndFindRoute)
     auto handler3 = std::make_shared<DummyHandler>();
 
     // Test adding routes
-    router.add_route("/test1", handler1);
-    router.add_route("/test2", handler2);
-    router.add_route("/test/nested/path", handler3);
+    router.add_route(HttpMethod::GET, "/test1", handler1);
+    router.add_route(HttpMethod::GET, "/test2", handler2);
+    router.add_route(HttpMethod::GET, "/test/nested/path", handler3);
 
     // Test finding existing routes
     std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
     std::map<std::string, std::string> query_params;
-    EXPECT_EQ(router.find_route("/test1", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/test1", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler, handler1);
 
-    EXPECT_EQ(router.find_route("/test2", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/test2", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler, handler2);
 
-    EXPECT_EQ(router.find_route("/test/nested/path", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/test/nested/path", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler, handler3);
 
     // Test finding non-existent route
-    EXPECT_EQ(router.find_route("/nonexistent", found_handler, params, query_params), -1);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/nonexistent", found_handler, params, query_params), -1);
 }
 
 TEST(RouterTest, ParameterExtraction)
@@ -56,14 +56,14 @@ TEST(RouterTest, ParameterExtraction)
     auto handler = std::make_shared<DummyHandler>();
 
     // Add a route with a parameter
-    router.add_route("/users/:id", handler);
+    router.add_route(HttpMethod::GET, "/users/:id", handler);
 
     std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
     std::map<std::string, std::string> query_params;
 
     // Test parameter extraction
-    EXPECT_EQ(router.find_route("/users/123", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/users/123", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler, handler);
     EXPECT_EQ(params["id"], "123");
 }
@@ -74,14 +74,14 @@ TEST(RouterTest, MultipleParameters)
     auto handler = std::make_shared<DummyHandler>();
 
     // Add a route with multiple parameters
-    router.add_route("/users/:userId/posts/:postId", handler);
+    router.add_route(HttpMethod::GET, "/users/:userId/posts/:postId", handler);
 
     std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
     std::map<std::string, std::string> query_params;
 
     // Test multiple parameter extraction
-    EXPECT_EQ(router.find_route("/users/123/posts/456", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/users/123/posts/456", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler, handler);
     EXPECT_EQ(params["userId"], "123");
     EXPECT_EQ(params["postId"], "456");
@@ -93,14 +93,14 @@ TEST(RouterTest, WildcardWithParameters)
     auto handler = std::make_shared<DummyHandler>();
 
     // Add a route with wildcard and parameters
-    router.add_route("/files/:path/*", handler);
+    router.add_route(HttpMethod::GET, "/files/:path/*", handler);
 
     std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
     std::map<std::string, std::string> query_params;
 
     // Test wildcard with parameter extraction
-    EXPECT_EQ(router.find_route("/files/documents/report.pdf", found_handler, params, query_params),
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/files/documents/report.pdf", found_handler, params, query_params),
               0);
     EXPECT_EQ(found_handler, handler);
     EXPECT_EQ(params["path"], "documents");
@@ -113,14 +113,14 @@ TEST(RouterTest, QueryParameters)
     auto handler = std::make_shared<DummyHandler>();
 
     // Add a static route
-    router.add_route("/search", handler);
+    router.add_route(HttpMethod::GET, "/search", handler);
 
     std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
     std::map<std::string, std::string> query_params;
 
     // Test basic query parameter extraction
-    EXPECT_EQ(router.find_route("/search?q=test&page=2", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/search?q=test&page=2", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler, handler);
     EXPECT_EQ(query_params["q"], "test");
     EXPECT_EQ(query_params["page"], "2");
@@ -130,7 +130,7 @@ TEST(RouterTest, QueryParameters)
     query_params.clear();
 
     // Test URL-encoded query parameters
-    EXPECT_EQ(router.find_route("/search?q=hello+world&filter=category%3Dbooks", found_handler,
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/search?q=hello+world&filter=category%3Dbooks", found_handler,
                                 params, query_params),
               0);
     EXPECT_EQ(found_handler, handler);
@@ -144,14 +144,14 @@ TEST(RouterTest, PathAndQueryParameters)
     auto handler = std::make_shared<DummyHandler>();
 
     // Add a route with path parameters
-    router.add_route("/users/:userId/posts/:postId", handler);
+    router.add_route(HttpMethod::GET, "/users/:userId/posts/:postId", handler);
 
     std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
     std::map<std::string, std::string> query_params;
 
     // Test combination of path and query parameters
-    EXPECT_EQ(router.find_route("/users/123/posts/456?sort=date&order=desc", found_handler, params,
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/users/123/posts/456?sort=date&order=desc", found_handler, params,
                                 query_params),
               0);
     EXPECT_EQ(found_handler, handler);
@@ -171,14 +171,14 @@ TEST(RouterTest, QueryParametersWithoutValue)
     auto handler = std::make_shared<DummyHandler>();
 
     // Add a static route
-    router.add_route("/options", handler);
+    router.add_route(HttpMethod::GET, "/options", handler);
 
     std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
     std::map<std::string, std::string> query_params;
 
     // Test query parameters without values
-    EXPECT_EQ(router.find_route("/options?debug&verbose", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/options?debug&verbose", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler, handler);
     EXPECT_EQ(query_params["debug"], "");
     EXPECT_EQ(query_params["verbose"], "");
@@ -186,7 +186,7 @@ TEST(RouterTest, QueryParametersWithoutValue)
     // Test mixed query parameters with and without values
     params.clear();
     query_params.clear();
-    EXPECT_EQ(router.find_route("/options?debug&level=info", found_handler, params, query_params),
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/options?debug&level=info", found_handler, params, query_params),
               0);
     EXPECT_EQ(found_handler, handler);
     EXPECT_EQ(query_params["debug"], "");
@@ -204,24 +204,24 @@ TEST(RouterTest, HybridRoutingStrategy)
     auto param_handler = std::make_shared<DummyHandler>(3); // 参数化路由
 
     // 添加各种类型的路由
-    router.add_route("/api", short_handler); // 短路径 -> 哈希表
-    router.add_route("/api/users/profiles/settings/notifications",
+    router.add_route(HttpMethod::GET, "/api", short_handler); // 短路径 -> 哈希表
+    router.add_route(HttpMethod::GET, "/api/users/profiles/settings/notifications",
                      long_handler);                             // 长路径 -> Trie树
-    router.add_route("/products/:category/:id", param_handler); // 参数化路由
+    router.add_route(HttpMethod::GET, "/products/:category/:id", param_handler); // 参数化路由
 
     std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
     std::map<std::string, std::string> query_params;
 
     // 测试短路径查找 (哈希表)
-    EXPECT_EQ(router.find_route("/api", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api", found_handler, params, query_params), 0);
     ASSERT_NE(found_handler, nullptr);
     EXPECT_EQ(found_handler->id(), 1);
 
     // 测试长路径查找 (Trie树)
     params.clear();
     query_params.clear();
-    EXPECT_EQ(router.find_route("/api/users/profiles/settings/notifications", found_handler, params,
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/users/profiles/settings/notifications", found_handler, params,
                                 query_params),
               0);
     ASSERT_NE(found_handler, nullptr);
@@ -230,7 +230,7 @@ TEST(RouterTest, HybridRoutingStrategy)
     // 测试参数化路由查找
     params.clear();
     query_params.clear();
-    EXPECT_EQ(router.find_route("/products/electronics/12345", found_handler, params, query_params),
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/products/electronics/12345", found_handler, params, query_params),
               0);
     ASSERT_NE(found_handler, nullptr);
     EXPECT_EQ(found_handler->id(), 3);
@@ -250,29 +250,29 @@ TEST(RouterTest, ComplexRoutingScenario)
     }
 
     // 短路径路由
-    router.add_route("/", handlers[0]);
-    router.add_route("/home", handlers[1]);
-    router.add_route("/about", handlers[2]);
-    router.add_route("/contact", handlers[3]);
-    router.add_route("/login", handlers[4]);
-    router.add_route("/signup", handlers[5]);
+    router.add_route(HttpMethod::GET, "/", handlers[0]);
+    router.add_route(HttpMethod::GET, "/home", handlers[1]);
+    router.add_route(HttpMethod::GET, "/about", handlers[2]);
+    router.add_route(HttpMethod::GET, "/contact", handlers[3]);
+    router.add_route(HttpMethod::POST, "/login", handlers[4]); // Example of POST
+    router.add_route(HttpMethod::POST, "/signup", handlers[5]); // Example of POST
 
     // 长路径路由 (Trie树)
-    router.add_route("/api/v1/users/profiles/settings", handlers[10]);
-    router.add_route("/api/v1/users/profiles/photos", handlers[11]);
-    router.add_route("/api/v1/users/profiles/friends", handlers[12]);
-    router.add_route("/api/v1/posts/recent/comments", handlers[13]);
-    router.add_route("/api/v1/posts/trending/today", handlers[14]);
+    router.add_route(HttpMethod::GET, "/api/v1/users/profiles/settings", handlers[10]);
+    router.add_route(HttpMethod::GET, "/api/v1/users/profiles/photos", handlers[11]);
+    router.add_route(HttpMethod::GET, "/api/v1/users/profiles/friends", handlers[12]);
+    router.add_route(HttpMethod::GET, "/api/v1/posts/recent/comments", handlers[13]);
+    router.add_route(HttpMethod::GET, "/api/v1/posts/trending/today", handlers[14]);
 
     // 参数化路由
-    router.add_route("/users/:userId", handlers[20]);
-    router.add_route("/users/:userId/profile", handlers[21]);
-    router.add_route("/users/:userId/posts/:postId", handlers[22]);
-    router.add_route("/products/:category/:productId/reviews", handlers[23]);
+    router.add_route(HttpMethod::GET, "/users/:userId", handlers[20]);
+    router.add_route(HttpMethod::PUT, "/users/:userId/profile", handlers[21]); // Example of PUT
+    router.add_route(HttpMethod::DELETE, "/users/:userId/posts/:postId", handlers[22]); // Example of DELETE
+    router.add_route(HttpMethod::GET, "/products/:category/:productId/reviews", handlers[23]);
 
     // 通配符路由
-    router.add_route("/static/*", handlers[30]);
-    router.add_route("/files/:type/*", handlers[31]);
+    router.add_route(HttpMethod::GET, "/static/*", handlers[30]);
+    router.add_route(HttpMethod::GET, "/files/:type/*", handlers[31]);
 
 
     // 测试各种路由查找
@@ -281,33 +281,44 @@ TEST(RouterTest, ComplexRoutingScenario)
     std::map<std::string, std::string> query_params;
 
     // 测试通配符
-    EXPECT_EQ(router.find_route("/static/123", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/static/123", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 30);
     EXPECT_EQ(params["*"], "123");
 
     // 测试短路径
-    EXPECT_EQ(router.find_route("/about", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/about", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 2);
+
+    EXPECT_EQ(router.find_route(HttpMethod::POST, "/login", found_handler, params, query_params), 0);
+    EXPECT_EQ(found_handler->id(), 4);
+
 
     // 测试长路径
     params.clear();
     query_params.clear();
     EXPECT_EQ(
-        router.find_route("/api/v1/posts/trending/today", found_handler, params, query_params), 0);
+        router.find_route(HttpMethod::GET, "/api/v1/posts/trending/today", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 14);
 
     // 测试参数化路由
     params.clear();
     query_params.clear();
-    EXPECT_EQ(router.find_route("/users/42/posts/123", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::DELETE, "/users/42/posts/123", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 22);
     EXPECT_EQ(params["userId"], "42");
     EXPECT_EQ(params["postId"], "123");
 
+    params.clear();
+    query_params.clear();
+    EXPECT_EQ(router.find_route(HttpMethod::PUT, "/users/myuser/profile", found_handler, params, query_params), 0);
+    EXPECT_EQ(found_handler->id(), 21);
+    EXPECT_EQ(params["userId"], "myuser");
+
+
     // 测试通配符路由
     params.clear();
     query_params.clear();
-    EXPECT_EQ(router.find_route("/files/documents/reports/annual/2023.pdf", found_handler, params,
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/files/documents/reports/annual/2023.pdf", found_handler, params,
                                 query_params),
               0);
     EXPECT_EQ(found_handler->id(), 31);
@@ -317,7 +328,7 @@ TEST(RouterTest, ComplexRoutingScenario)
     // 测试混合参数和查询参数
     params.clear();
     query_params.clear();
-    EXPECT_EQ(router.find_route("/products/electronics/12345/reviews?sort=newest&page=2",
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/products/electronics/12345/reviews?sort=newest&page=2",
                                 found_handler, params, query_params),
               0);
     EXPECT_EQ(found_handler->id(), 23);
@@ -338,27 +349,27 @@ TEST(RouterTest, RouteConflictResolution)
     auto handler3 = std::make_shared<DummyHandler>(3);
 
     // 添加潜在冲突的路由
-    router.add_route("/api/users", handler1);
-    router.add_route("/api/:resource", handler2); // 可能与静态路由冲突
-    router.add_route("/api/users/:id", handler3); // 更具体的路由
+    router.add_route(HttpMethod::GET, "/api/users", handler1);
+    router.add_route(HttpMethod::GET, "/api/:resource", handler2); // 可能与静态路由冲突
+    router.add_route(HttpMethod::GET, "/api/users/:id", handler3); // 更具体的路由
 
     std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
     std::map<std::string, std::string> query_params;
 
     // 测试静态路由优先于参数化路由
-    EXPECT_EQ(router.find_route("/api/users", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/users", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 1); // 应该匹配静态路由
 
     // 测试参数化路由匹配其他资源
     params.clear();
-    EXPECT_EQ(router.find_route("/api/products", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/products", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 2);
     EXPECT_EQ(params["resource"], "products");
 
     // 测试更具体的参数化路由
     params.clear();
-    EXPECT_EQ(router.find_route("/api/users/42", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/users/42", found_handler, params, query_params), 0);
     EXPECT_EQ(found_handler->id(), 3);
     EXPECT_EQ(params["id"], "42");
 }
@@ -374,23 +385,25 @@ TEST(RouterTest, PerformanceBenchmark)
 
     for (int i = 0; i < NUM_ROUTES; i++) {
         handlers.push_back(std::make_shared<DummyHandler>(i));
+        HttpMethod method = static_cast<HttpMethod>(i % 5); // Cycle through a few methods
+        if (method == HttpMethod::UNKNOWN) method = HttpMethod::GET; // Avoid UNKNOWN for adding
 
         // 添加各种类型的路由
         if (i % 5 == 0) {
             // 短路径
-            router.add_route("/short" + std::to_string(i), handlers[i]);
+            router.add_route(method, "/short" + std::to_string(i), handlers[i]);
         } else if (i % 5 == 1) {
             // 长路径
-            router.add_route("/api/v1/users/profiles/settings/" + std::to_string(i), handlers[i]);
+            router.add_route(method, "/api/v1/users/profiles/settings/" + std::to_string(i), handlers[i]);
         } else if (i % 5 == 2) {
             // 参数化路由
-            router.add_route("/users/" + std::to_string(i) + "/:param", handlers[i]);
+            router.add_route(method, "/users/" + std::to_string(i) + "/:param", handlers[i]);
         } else if (i % 5 == 3) {
             // 带多个参数的路由
-            router.add_route("/products/:category/" + std::to_string(i) + "/:id", handlers[i]);
+            router.add_route(method, "/products/:category/" + std::to_string(i) + "/:id", handlers[i]);
         } else {
             // 通配符路由
-            router.add_route("/files/" + std::to_string(i) + "/*", handlers[i]);
+            router.add_route(method, "/files/" + std::to_string(i) + "/*", handlers[i]);
         }
     }
 
@@ -400,26 +413,26 @@ TEST(RouterTest, PerformanceBenchmark)
     std::map<std::string, std::string> query_params;
 
     // 测试短路径查找（哈希表）
-    EXPECT_EQ(router.find_route("/short100", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/short100", found_handler, params, query_params), 0); // Assuming 100%5 == 0 -> GET
     EXPECT_EQ(found_handler->id(), 100);
 
     // 测试长路径查找（Trie树）
     params.clear();
-    EXPECT_EQ(router.find_route("/api/v1/users/profiles/settings/101", found_handler, params,
+    EXPECT_EQ(router.find_route(HttpMethod::POST, "/api/v1/users/profiles/settings/101", found_handler, params, // Assuming 101%5 == 1 -> POST
                                 query_params),
               0);
     EXPECT_EQ(found_handler->id(), 101);
 
     // 测试参数化路由
     params.clear();
-    EXPECT_EQ(router.find_route("/users/102/test", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::PUT, "/users/102/test", found_handler, params, query_params), 0); // Assuming 102%5 == 2 -> PUT
     EXPECT_EQ(found_handler->id(), 102);
     EXPECT_EQ(params["param"], "test");
 
     // 测试通配符路由
     params.clear();
     EXPECT_EQ(
-        router.find_route("/files/104/some/deep/path.txt", found_handler, params, query_params), 0);
+        router.find_route(HttpMethod::PATCH, "/files/104/some/deep/path.txt", found_handler, params, query_params), 0); // Assuming 104%5 == 4 -> PATCH
     EXPECT_EQ(found_handler->id(), 104);
     EXPECT_EQ(params["*"], "some/deep/path.txt");
 }
@@ -435,9 +448,9 @@ TEST(RouterTest, RouteCaching)
     auto handler3 = std::make_shared<DummyHandler>(3);
 
     // 添加各种类型的路由
-    router.add_route("/api/users", handler1);         // 简单路由
-    router.add_route("/api/posts/:postId", handler2); // 参数化路由
-    router.add_route("/files/documents/*", handler3); // 通配符路由
+    router.add_route(HttpMethod::GET, "/api/users", handler1);         // 简单路由
+    router.add_route(HttpMethod::POST, "/api/posts/:postId", handler2); // 参数化路由
+    router.add_route(HttpMethod::GET, "/files/documents/*", handler3); // 通配符路由
 
     std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
@@ -445,7 +458,7 @@ TEST(RouterTest, RouteCaching)
 
     // 第一次查找 - 应该需要常规路由匹配
     auto start_time = std::chrono::high_resolution_clock::now();
-    EXPECT_EQ(router.find_route("/api/posts/123", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::POST, "/api/posts/123", found_handler, params, query_params), 0);
     auto end_time = std::chrono::high_resolution_clock::now();
     auto first_duration =
         std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count();
@@ -458,7 +471,7 @@ TEST(RouterTest, RouteCaching)
 
     // 第二次查找同样的路径 - 应该命中缓存，速度更快
     start_time = std::chrono::high_resolution_clock::now();
-    EXPECT_EQ(router.find_route("/api/posts/123", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::POST, "/api/posts/123", found_handler, params, query_params), 0);
     end_time = std::chrono::high_resolution_clock::now();
     auto second_duration =
         std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count();
@@ -468,23 +481,26 @@ TEST(RouterTest, RouteCaching)
 
     // 验证第二次查找缓存命中，理论上应该比第一次快
     // 由于测试运行环境不确定性，仅打印信息而不硬编码比较
-    std::cout << "First lookup: " << first_duration << " ns" << std::endl;
-    std::cout << "Second lookup (cached): " << second_duration << " ns" << std::endl;
-    std::cout << "Cache speedup: "
-              << (first_duration > 0 ? (double)first_duration / second_duration : 0) << "x faster"
-              << std::endl;
+    std::cout << "First lookup (POST /api/posts/123): " << first_duration << " ns" << std::endl;
+    std::cout << "Second lookup (cached POST /api/posts/123): " << second_duration << " ns" << std::endl;
+    if (second_duration > 0) { // Avoid division by zero
+      std::cout << "Cache speedup: "
+                << (double)first_duration / second_duration << "x faster"
+                << std::endl;
+    }
+
 
     // 测试通配符路由缓存
     params.clear();
     query_params.clear();
-    EXPECT_EQ(router.find_route("/files/documents/report.pdf", found_handler, params, query_params),
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/files/documents/report.pdf", found_handler, params, query_params),
               0);
     EXPECT_EQ(found_handler->id(), 3);
     EXPECT_EQ(params["*"], "report.pdf");
 
     // 再次查找，应命中缓存
     params.clear();
-    EXPECT_EQ(router.find_route("/files/documents/report.pdf", found_handler, params, query_params),
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/files/documents/report.pdf", found_handler, params, query_params),
               0);
     EXPECT_EQ(found_handler->id(), 3);
     EXPECT_EQ(params["*"], "report.pdf");
@@ -495,7 +511,7 @@ TEST(RouterTest, RouteCaching)
     // 清除缓存后，应该需要重新匹配
     params.clear();
     start_time = std::chrono::high_resolution_clock::now();
-    EXPECT_EQ(router.find_route("/api/posts/123", found_handler, params, query_params), 0);
+    EXPECT_EQ(router.find_route(HttpMethod::POST, "/api/posts/123", found_handler, params, query_params), 0);
     end_time = std::chrono::high_resolution_clock::now();
     auto after_clear_duration =
         std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count();
@@ -503,7 +519,7 @@ TEST(RouterTest, RouteCaching)
     EXPECT_EQ(found_handler->id(), 2);
     EXPECT_EQ(params["postId"], "123");
 
-    std::cout << "After cache clear: " << after_clear_duration << " ns" << std::endl;
+    std::cout << "After cache clear (POST /api/posts/123): " << after_clear_duration << " ns" << std::endl;
 }
 
 // 测试路由缓存在高压场景下的性能
@@ -517,21 +533,27 @@ TEST(RouterTest, CachePerformanceUnderLoad)
 
     for (int i = 0; i < NUM_ROUTES; i++) {
         handlers.push_back(std::make_shared<DummyHandler>(i));
+        HttpMethod method = static_cast<HttpMethod>(i % 4); // GET, POST, PUT, DELETE
         // 混合各类路由
         if (i % 4 == 0) {
-            router.add_route("/api/users/" + std::to_string(i), handlers[i]);
+            router.add_route(method, "/api/users/" + std::to_string(i), handlers[i]);
         } else if (i % 4 == 1) {
-            router.add_route("/api/posts/" + std::to_string(i) + "/:id", handlers[i]);
+            router.add_route(method, "/api/posts/" + std::to_string(i) + "/:id", handlers[i]);
         } else if (i % 4 == 2) {
-            router.add_route("/api/products/" + std::to_string(i) + "/*", handlers[i]);
+            router.add_route(method, "/api/products/" + std::to_string(i) + "/*", handlers[i]);
         } else {
-            router.add_route("/static/" + std::to_string(i), handlers[i]);
+            router.add_route(method, "/static/" + std::to_string(i), handlers[i]);
         }
     }
 
     // 选择一些路径进行压力测试
-    std::vector<std::string> test_paths = {"/api/users/100", "/api/posts/101/123",
-                                           "/api/products/102/some/deep/path", "/static/103"};
+    std::vector<std::pair<HttpMethod, std::string>> test_paths_with_methods = {
+        {HttpMethod::GET, "/api/users/100"},              // 100 % 4 == 0 -> GET
+        {HttpMethod::POST, "/api/posts/101/123"},         // 101 % 4 == 1 -> POST
+        {HttpMethod::PUT, "/api/products/102/some/deep/path"}, // 102 % 4 == 2 -> PUT
+        {HttpMethod::DELETE, "/static/103"}               // 103 % 4 == 3 -> DELETE
+    };
+
 
     // 执行多次查找，模拟高频访问
     const int ITERATIONS = 1000;
@@ -544,14 +566,15 @@ TEST(RouterTest, CachePerformanceUnderLoad)
 
     for (int i = 0; i < ITERATIONS; i++) {
         // 循环使用测试路径
-        const std::string &path = test_paths[i % test_paths.size()];
+        const auto& path_pair = test_paths_with_methods[i % test_paths_with_methods.size()];
         params.clear();
+        query_params.clear();
 
         // 执行路由查找
-        EXPECT_EQ(router.find_route(path, found_handler, params, query_params), 0);
+        EXPECT_EQ(router.find_route(path_pair.first, path_pair.second, found_handler, params, query_params), 0);
 
         // 第一次后应该都会命中缓存
-        if (i >= test_paths.size()) {
+        if (i >= test_paths_with_methods.size()) {
             // 确保找到了处理程序
             ASSERT_NE(found_handler, nullptr);
         }
@@ -566,6 +589,114 @@ TEST(RouterTest, CachePerformanceUnderLoad)
     std::cout << "Average: " << (double)total_duration / ITERATIONS << " ms per lookup"
               << std::endl;
 }
+
+
+// Test suite for HTTP method specific functionalities
+TEST(HttpRouterMethodTest, AddAndFindWithDifferentMethods) {
+    http_router<DummyHandler> router;
+    auto handler_get = std::make_shared<DummyHandler>(1);
+    auto handler_post = std::make_shared<DummyHandler>(2);
+    auto handler_put = std::make_shared<DummyHandler>(3);
+
+    router.add_route(HttpMethod::GET, "/resource", handler_get);
+    router.add_route(HttpMethod::POST, "/resource", handler_post);
+    router.add_route(HttpMethod::PUT, "/another", handler_put);
+
+    std::shared_ptr<DummyHandler> found_handler;
+    std::map<std::string, std::string> params;
+    std::map<std::string, std::string> query_params;
+
+    // Find GET /resource
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/resource", found_handler, params, query_params), 0);
+    ASSERT_NE(found_handler, nullptr);
+    EXPECT_EQ(found_handler->id(), 1);
+
+    // Find POST /resource
+    found_handler = nullptr; // Reset
+    params.clear();
+    EXPECT_EQ(router.find_route(HttpMethod::POST, "/resource", found_handler, params, query_params), 0);
+    ASSERT_NE(found_handler, nullptr);
+    EXPECT_EQ(found_handler->id(), 2);
+
+    // Find PUT /another
+    found_handler = nullptr; // Reset
+    params.clear();
+    EXPECT_EQ(router.find_route(HttpMethod::PUT, "/another", found_handler, params, query_params), 0);
+    ASSERT_NE(found_handler, nullptr);
+    EXPECT_EQ(found_handler->id(), 3);
+
+    // Try to find GET /resource with POST method (should fail or get POST handler depending on strictness, current setup implies separate)
+    // Current behavior: Should not find if method mismatches for the specific path storage.
+    EXPECT_EQ(router.find_route(HttpMethod::PUT, "/resource", found_handler, params, query_params), -1);
+
+    // Try to find non-existent method for a path
+    EXPECT_EQ(router.find_route(HttpMethod::DELETE, "/resource", found_handler, params, query_params), -1);
+
+    // Try to find non-existent path for an existing method
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/nonexistent", found_handler, params, query_params), -1);
+}
+
+TEST(HttpRouterMethodTest, MethodSpecificCache) {
+    http_router<DummyHandler> router;
+    auto handler_get_user = std::make_shared<DummyHandler>(10);
+    auto handler_post_user = std::make_shared<DummyHandler>(11);
+
+    router.add_route(HttpMethod::GET, "/user/profile", handler_get_user);
+    router.add_route(HttpMethod::POST, "/user/profile", handler_post_user);
+
+    std::shared_ptr<DummyHandler> found_handler;
+    std::map<std::string, std::string> params;
+    std::map<std::string, std::string> query_params;
+
+    // First lookup GET (populates cache for GET:/user/profile)
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/user/profile", found_handler, params, query_params), 0);
+    ASSERT_NE(found_handler, nullptr);
+    EXPECT_EQ(found_handler->id(), 10);
+
+    // First lookup POST (populates cache for POST:/user/profile)
+    found_handler = nullptr;
+    EXPECT_EQ(router.find_route(HttpMethod::POST, "/user/profile", found_handler, params, query_params), 0);
+    ASSERT_NE(found_handler, nullptr);
+    EXPECT_EQ(found_handler->id(), 11);
+
+    // Second lookup GET (should hit cache for GET:/user/profile)
+    found_handler = nullptr;
+    // std::cout << "Finding GET /user/profile again" << std::endl;
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/user/profile", found_handler, params, query_params), 0);
+    ASSERT_NE(found_handler, nullptr);
+    EXPECT_EQ(found_handler->id(), 10); // Should be GET handler
+
+    // Second lookup POST (should hit cache for POST:/user/profile)
+    found_handler = nullptr;
+    // std::cout << "Finding POST /user/profile again" << std::endl;
+    EXPECT_EQ(router.find_route(HttpMethod::POST, "/user/profile", found_handler, params, query_params), 0);
+    ASSERT_NE(found_handler, nullptr);
+    EXPECT_EQ(found_handler->id(), 11); // Should be POST handler
+
+    // Clear cache and verify
+    router.clear_cache();
+    found_handler = nullptr;
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/user/profile", found_handler, params, query_params), 0);
+    ASSERT_NE(found_handler, nullptr);
+    EXPECT_EQ(found_handler->id(), 10); // Should still be GET handler, but not from cache initially
+}
+
+TEST(HttpRouterMethodTest, AddRouteWithUnknownMethod)
+{
+    http_router<DummyHandler> router;
+    auto handler = std::make_shared<DummyHandler>(1);
+    // Adding with UNKNOWN method should ideally be a no-op or an error.
+    // Current add_route implementation has a check: if (path.empty() || !handler || method == HttpMethod::UNKNOWN) return;
+    router.add_route(HttpMethod::UNKNOWN, "/test_unknown", handler);
+
+    std::shared_ptr<DummyHandler> found_handler;
+    std::map<std::string, std::string> params;
+    std::map<std::string, std::string> query_params;
+    EXPECT_EQ(router.find_route(HttpMethod::UNKNOWN, "/test_unknown", found_handler, params, query_params), -1);
+    // Also try finding with a valid method, it shouldn't be there.
+    EXPECT_EQ(router.find_route(HttpMethod::GET, "/test_unknown", found_handler, params, query_params), -1);
+}
+
 
 int main(int argc, char **argv)
 {
