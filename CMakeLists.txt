@@ -39,7 +39,9 @@ add_executable(http_router_tests
     tests/http_router_stress_test.cpp
     tests/test_router_group.cpp
     tests/test_router.cpp
-    
+    tests/router_optimization_integration_test.cpp
+    tests/router_optimization_test.cpp
+    tests/simple_test.cpp
 )
 
 target_link_directories(${TEST_TARGETS}
