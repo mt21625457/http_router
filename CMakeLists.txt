@@ -39,6 +39,8 @@ add_executable(http_router_tests
     tests/http_router_hybrid_test.cpp
     tests/http_router_adv_test.cpp
     tests/http_router_stress_test.cpp
+    tests/test_router_group.cpp
+    tests/test_router.cpp
 )
 
 # Link test executables with GTest
