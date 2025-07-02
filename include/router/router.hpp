@@ -172,12 +172,12 @@ class router
 
 private:
     /**
-     * @brief Route information storage structure (simplified for memory safety)
-     *        路由信息存储结构（为内存安全而简化）
+     * @brief Route information storage structure (using unique_ptr for clear ownership)
+     *        路由信息存储结构（使用unique_ptr明确所有权）
      */
     struct RouteInfo
     {
-        std::shared_ptr<Handler> handler;     ///< Route handler / 路由处理器
+        std::unique_ptr<Handler> handler;     ///< Route handler / 路由处理器
         std::vector<std::string> param_names; ///< Parameter names for parameterized
                                               ///< routes / 参数化路由的参数名
         bool has_wildcard;                    ///< Whether route has wildcard / 路由是否包含通配符
@@ -186,17 +186,18 @@ private:
         RouteInfo() : has_wildcard(false) {}
 
         // 显式构造函数 - Explicit constructor
-        RouteInfo(std::shared_ptr<Handler> h, std::vector<std::string> names, bool wildcard)
-            : handler(h), param_names(std::move(names)), has_wildcard(wildcard)
+        RouteInfo(std::unique_ptr<Handler> h, std::vector<std::string> names, bool wildcard)
+            : handler(std::move(h)), param_names(std::move(names)), has_wildcard(wildcard)
         {
         }
 
-        // 禁用拷贝构造函数和赋值操作符，强制使用移动语义
-        // Disable copy constructor and assignment operator, force move semantics
+        // 禁用拷贝构造函数和赋值操作符，unique_ptr天然支持移动语义
+        // Disable copy constructor and assignment operator, unique_ptr naturally supports move
+        // semantics
         RouteInfo(const RouteInfo &) = delete;
         RouteInfo &operator=(const RouteInfo &) = delete;
 
-        // 简化的移动构造函数 - Simplified move constructor
+        // 移动构造函数 - Move constructor
         RouteInfo(RouteInfo &&other) noexcept
             : handler(std::move(other.handler)), param_names(std::move(other.param_names)),
               has_wildcard(other.has_wildcard)
@@ -204,11 +205,10 @@ private:
             other.has_wildcard = false;
         }
 
-        // 简化的移动赋值操作符 - Simplified move assignment operator
+        // 移动赋值操作符 - Move assignment operator
         RouteInfo &operator=(RouteInfo &&other) noexcept
         {
             if (this != &other) {
-                // 显式重置，避免复杂的交换操作
                 handler = std::move(other.handler);
                 param_names = std::move(other.param_names);
                 has_wildcard = other.has_wildcard;
@@ -218,32 +218,29 @@ private:
         }
 
         // 析构函数 - Destructor
-        ~RouteInfo()
-        {
-            // 显式重置shared_ptr以确保正确的引用计数管理
-            // Explicitly reset shared_ptr to ensure proper reference count management
-            try {
-                handler.reset();
-            } catch (...) {
-                // 忽略析构中的异常
-                // Ignore exceptions in destructor
-            }
-        }
+        ~RouteInfo() = default; // unique_ptr自动处理内存管理
     };
 
     /**
-     * @brief Cache entry for storing route lookup results
-     *        用于存储路由查找结果的缓存条目
+     * @brief Cache entry for storing route lookup results (using reference wrapper)
+     *        用于存储路由查找结果的缓存条目（使用引用包装器）
      */
     struct CacheEntry
     {
-        std::shared_ptr<Handler> handler;          ///< Cached handler / 缓存的处理器
+        std::optional<std::reference_wrapper<Handler>>
+            handler;                               ///< Cached handler reference / 缓存的处理器引用
         std::map<std::string, std::string> params; ///< Cached parameters / 缓存的参数
         std::list<std::string>::iterator lru_it;   ///< LRU list iterator for O(1) updates /
                                                    ///< LRU列表迭代器用于O(1)更新
 
         // 默认构造函数 - Default constructor
-        CacheEntry() = default;
+        CacheEntry() : handler(std::nullopt) {}
+
+        // 构造函数 - Constructor
+        CacheEntry(Handler &h, const std::map<std::string, std::string> &p)
+            : handler(std::ref(h)), params(p)
+        {
+        }
 
         // 拷贝构造函数 - Copy constructor
         CacheEntry(const CacheEntry &other)
@@ -253,9 +250,9 @@ private:
 
         // 移动构造函数 - Move constructor
         CacheEntry(CacheEntry &&other) noexcept
-            : handler(std::move(other.handler)), params(std::move(other.params)),
-              lru_it(other.lru_it)
+            : handler(other.handler), params(std::move(other.params)), lru_it(other.lru_it)
         {
+            other.handler = std::nullopt;
         }
 
         // 拷贝赋值操作符 - Copy assignment operator
@@ -273,9 +270,10 @@ private:
         CacheEntry &operator=(CacheEntry &&other) noexcept
         {
             if (this != &other) {
-                handler = std::move(other.handler);
+                handler = other.handler;
                 params = std::move(other.params);
                 lru_it = other.lru_it;
+                other.handler = std::nullopt;
             }
             return *this;
         }
@@ -441,7 +439,7 @@ public:
      * r.add_route(HttpMethod::GET, "/static/\\*", static_file_handler);
      * ```
      */
-    void add_route(HttpMethod method, const std::string &path, std::shared_ptr<Handler> handler);
+    void add_route(HttpMethod method, const std::string &path, std::unique_ptr<Handler> &&handler);
 
     /**
      * @brief Find route by matching path and extract parameters
@@ -475,9 +473,9 @@ public:
      * }
      * ```
      */
-    int find_route(HttpMethod method, std::string_view path, std::shared_ptr<Handler> &handler,
-                   std::map<std::string, std::string> &params,
-                   std::map<std::string, std::string> &query_params);
+    Handler *find_route(HttpMethod method, std::string_view path,
+                        std::map<std::string, std::string> &params,
+                        std::map<std::string, std::string> &query_params);
 
     /**
      * @brief Clear thread-local route cache
@@ -610,14 +608,11 @@ private:
      *
      * @param method HTTP method / HTTP方法
      * @param path URL path / URL路径
-     * @param handler [OUT] Cached handler if found / [输出] 找到的缓存处理器
      * @param params [OUT] Cached parameters if found / [输出] 找到的缓存参数
-     * @return bool True if cache hit, false otherwise /
-     * 缓存命中返回true，否则返回false
+     * @return Handler* Cached handler if found, nullptr otherwise / 找到的缓存处理器，否则为nullptr
      */
-    bool check_route_cache(HttpMethod method, const std::string &path,
-                           std::shared_ptr<Handler> &handler,
-                           std::map<std::string, std::string> &params) const;
+    Handler *check_route_cache(HttpMethod method, const std::string &path,
+                               std::map<std::string, std::string> &params) const;
 
     /**
      * @brief Cache route lookup result in thread-local cache
@@ -628,8 +623,7 @@ private:
      * @param handler Route handler to cache / 要缓存的路由处理器
      * @param params Route parameters to cache / 要缓存的路由参数
      */
-    void cache_route(HttpMethod method, const std::string &path,
-                     const std::shared_ptr<Handler> &handler,
+    void cache_route(HttpMethod method, const std::string &path, Handler &handler,
                      const std::map<std::string, std::string> &params) const;
 
     /**
@@ -702,7 +696,7 @@ private:
 
 template <typename Handler>
 void router<Handler>::add_route(HttpMethod method, const std::string &path,
-                                std::shared_ptr<Handler> handler)
+                                std::unique_ptr<Handler> &&handler)
 {
     std::string normalized_path = path;
     normalize_path(normalized_path);
@@ -744,7 +738,7 @@ void router<Handler>::add_route(HttpMethod method, const std::string &path,
         // 使用emplace直接构造RouteInfo对象，避免拷贝 - Use emplace to construct RouteInfo directly,
         // avoiding copies
         static_hash_routes_by_method_[method].emplace(
-            std::move(normalized_path), RouteInfo(handler, param_names, has_wildcard));
+            std::move(normalized_path), RouteInfo(std::move(handler), param_names, has_wildcard));
     } else {
         // Parameterized or wildcard route
         auto &route_vector = param_routes_by_method_[method];
@@ -766,8 +760,9 @@ void router<Handler>::add_route(HttpMethod method, const std::string &path,
         // 使用emplace_back直接构造pair和RouteInfo对象，避免所有拷贝和移动
         // Use emplace_back to construct pair and RouteInfo objects directly, avoiding all copying
         // and moving
-        route_vector.emplace_back(std::move(normalized_path),
-                                  RouteInfo(handler, std::move(param_names), has_wildcard));
+        route_vector.emplace_back(
+            std::move(normalized_path),
+            RouteInfo(std::move(handler), std::move(param_names), has_wildcard));
 
         // Update segment index for faster lookup (暂时禁用以避免复杂性 - temporarily disabled to
         // avoid complexity) size_t segment_count = segments.size();
@@ -776,10 +771,9 @@ void router<Handler>::add_route(HttpMethod method, const std::string &path,
 }
 
 template <typename Handler>
-int router<Handler>::find_route(HttpMethod method, std::string_view path,
-                                std::shared_ptr<Handler> &handler,
-                                std::map<std::string, std::string> &params,
-                                std::map<std::string, std::string> &query_params)
+Handler *router<Handler>::find_route(HttpMethod method, std::string_view path,
+                                     std::map<std::string, std::string> &params,
+                                     std::map<std::string, std::string> &query_params)
 {
     params.clear();
     query_params.clear();
@@ -797,8 +791,11 @@ int router<Handler>::find_route(HttpMethod method, std::string_view path,
     normalize_path(path_without_query);
 
     // Check cache first
-    if (ENABLE_CACHE && check_route_cache(method, path_without_query, handler, params)) {
-        return 0;
+    if (ENABLE_CACHE) {
+        auto cached_handler = check_route_cache(method, path_without_query, params);
+        if (cached_handler) {
+            return cached_handler;
+        }
     }
 
     // Try static routes - hash map only (trie temporarily disabled)
@@ -806,11 +803,11 @@ int router<Handler>::find_route(HttpMethod method, std::string_view path,
     if (hash_method_it != static_hash_routes_by_method_.end()) {
         auto route_it = hash_method_it->second.find(path_without_query);
         if (route_it != hash_method_it->second.end()) {
-            handler = route_it->second.handler;
+            Handler *found_handler = route_it->second.handler.get();
             if (ENABLE_CACHE) {
-                cache_route(method, path_without_query, handler, params);
+                cache_route(method, path_without_query, *found_handler, params);
             }
-            return 0;
+            return found_handler;
         }
     }
 
@@ -831,17 +828,17 @@ int router<Handler>::find_route(HttpMethod method, std::string_view path,
         if (!found_via_index) {
             for (const auto &route_pair : param_method_it->second) {
                 if (match_route(path_without_query, route_pair.first, route_pair.second, params)) {
-                    handler = route_pair.second.handler;
+                    Handler *found_handler = route_pair.second.handler.get();
                     if (ENABLE_CACHE) {
-                        cache_route(method, path_without_query, handler, params);
+                        cache_route(method, path_without_query, *found_handler, params);
                     }
-                    return 0;
+                    return found_handler;
                 }
             }
         }
     }
 
-    return -1; // Route not found
+    return nullptr; // Route not found
 }
 
 template <typename Handler>
@@ -943,9 +940,8 @@ std::string router<Handler>::generate_cache_key(HttpMethod method, const std::st
 }
 
 template <typename Handler>
-bool router<Handler>::check_route_cache(HttpMethod method, const std::string &path,
-                                        std::shared_ptr<Handler> &handler,
-                                        std::map<std::string, std::string> &params) const
+Handler *router<Handler>::check_route_cache(HttpMethod method, const std::string &path,
+                                            std::map<std::string, std::string> &params) const
 {
     auto &cache = get_thread_local_cache();
     auto &lru_list = get_thread_local_lru_list();
@@ -953,21 +949,19 @@ bool router<Handler>::check_route_cache(HttpMethod method, const std::string &pa
     std::string cache_key = generate_cache_key(method, path);
     auto it = cache.find(cache_key);
 
-    if (it != cache.end()) {
+    if (it != cache.end() && it->second.handler.has_value()) {
         // Cache hit - move to front of LRU list
         lru_list.splice(lru_list.begin(), lru_list, it->second.lru_it);
 
-        handler = it->second.handler;
         params = it->second.params;
-        return true;
+        return &it->second.handler.value().get();
     }
 
-    return false;
+    return nullptr;
 }
 
 template <typename Handler>
-void router<Handler>::cache_route(HttpMethod method, const std::string &path,
-                                  const std::shared_ptr<Handler> &handler,
+void router<Handler>::cache_route(HttpMethod method, const std::string &path, Handler &handler,
                                   const std::map<std::string, std::string> &params) const
 {
     auto &cache = get_thread_local_cache();
@@ -980,7 +974,7 @@ void router<Handler>::cache_route(HttpMethod method, const std::string &path,
     if (it != cache.end()) {
         // Update existing entry and move to front
         lru_list.splice(lru_list.begin(), lru_list, it->second.lru_it);
-        it->second.handler = handler;
+        it->second.handler = std::ref(handler);
         it->second.params = params;
         return;
     }
@@ -989,7 +983,7 @@ void router<Handler>::cache_route(HttpMethod method, const std::string &path,
     lru_list.push_front(cache_key);
 
     CacheEntry entry;
-    entry.handler = handler;
+    entry.handler = std::ref(handler);
     entry.params = params;
     entry.lru_it = lru_list.begin();
 

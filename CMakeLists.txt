@@ -42,6 +42,7 @@ add_executable(http_router_tests
     tests/router_optimization_integration_test.cpp
     tests/router_optimization_test.cpp
     tests/simple_test.cpp
+    tests/router_simple_test.cpp
 )
 
 target_link_directories(${TEST_TARGETS}
