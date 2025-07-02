@@ -1,4 +1,18 @@
-#include "http_router.hpp"
+/**
+ * @file http_router_cache_test.cpp
+ * @author mt21625457 (mt21625457@163.com)
+ * @brief Unit tests for HTTP router caching functionality
+ * 路由器缓存功能的单元测试
+ * @version 0.1
+ * @date 2025-03-26
+ *
+ * @copyright Copyright (c) 2025
+ */
+
+#include "../include/router/router.hpp"
+#include "../include/router/router_group.hpp"
+#include "../include/router/router_impl.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <functional>
@@ -8,11 +22,19 @@
 #include <string>
 #include <vector>
 
+using namespace flc;
+
 class DummyHandler
 {
 public:
     DummyHandler() = default;
     ~DummyHandler() = default;
+
+    // Copy and move constructors following Google style
+    DummyHandler(const DummyHandler &) = default;
+    DummyHandler &operator=(const DummyHandler &) = default;
+    DummyHandler(DummyHandler &&) = default;
+    DummyHandler &operator=(DummyHandler &&) = default;
 
     explicit DummyHandler(int id) : id_(id) {}
     int id() const { return id_; }
@@ -21,88 +43,99 @@ private:
     int id_ = 0;
 };
 
-// 基本缓存功能测试
-TEST(RouterCacheTest, BasicCacheFunctionality)
+class RouterCacheTest : public ::testing::Test
 {
-    http_router<DummyHandler> router;
+protected:
+    void SetUp() override
+    {
+        router_ = std::make_unique<router<DummyHandler>>();
+        params_.clear();
+        query_params_.clear();
+        found_handler_ = nullptr;
+    }
 
-    // 添加不同类型的路由
+    std::unique_ptr<router<DummyHandler>> router_;
+    std::shared_ptr<DummyHandler> found_handler_;
+    std::map<std::string, std::string> params_;
+    std::map<std::string, std::string> query_params_;
+};
+
+// Basic cache functionality test
+TEST_F(RouterCacheTest, BasicCacheFunctionality)
+{
+    // Add different types of routes
     auto handler1 = std::make_shared<DummyHandler>(1);
     auto handler2 = std::make_shared<DummyHandler>(2);
     auto handler3 = std::make_shared<DummyHandler>(3);
 
-    router.add_route(HttpMethod::GET, "/static/path", handler1);       // 静态路由 (哈希表)
-    router.add_route(HttpMethod::GET, "/api/users/:id", handler2);     // 参数化路由
-    router.add_route(HttpMethod::GET, "/files/documents/*", handler3); // 通配符路由
+    router_->add_route(HttpMethod::GET, "/static/path", handler1);   // Static route (hash table)
+    router_->add_route(HttpMethod::GET, "/api/users/:id", handler2); // Parameterized route
+    router_->add_route(HttpMethod::GET, "/files/documents/*", handler3); // Wildcard route
 
-    // 测试参数
-    std::shared_ptr<DummyHandler> found_handler;
-    std::map<std::string, std::string> params;
-    std::map<std::string, std::string> query_params;
+    // First access - requires route lookup
+    EXPECT_EQ(router_->find_route(HttpMethod::GET, "/api/users/123", found_handler_, params_,
+                                  query_params_),
+              0);
+    EXPECT_EQ(found_handler_->id(), 2);
+    EXPECT_EQ(params_["id"], "123");
 
-    // 第一次访问 - 需要路由查找
-    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/users/123", found_handler, params, query_params), 0);
-    EXPECT_EQ(found_handler->id(), 2);
-    EXPECT_EQ(params["id"], "123");
-
-    // 清除参数，再次访问同一路径应该命中缓存并填充参数
-    params.clear();
-    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/users/123", found_handler, params, query_params), 0);
-    EXPECT_EQ(found_handler->id(), 2);
-    EXPECT_EQ(params["id"], "123"); // 验证缓存还原了参数
+    // Clear parameters, access same path again should hit cache and populate parameters
+    params_.clear();
+    EXPECT_EQ(router_->find_route(HttpMethod::GET, "/api/users/123", found_handler_, params_,
+                                  query_params_),
+              0);
+    EXPECT_EQ(found_handler_->id(), 2);
+    EXPECT_EQ(params_["id"], "123"); // Verify cache restored parameters
 }
 
-// 缓存清除测试
-TEST(RouterCacheTest, CacheClearTest)
+// Cache clearing test
+TEST_F(RouterCacheTest, CacheClearTest)
 {
-    http_router<DummyHandler> router;
-
     auto handler = std::make_shared<DummyHandler>(1);
-    router.add_route(HttpMethod::GET, "/test/:param", handler);
+    router_->add_route(HttpMethod::GET, "/test/:param", handler);
 
-    std::shared_ptr<DummyHandler> found_handler;
-    std::map<std::string, std::string> params;
-    std::map<std::string, std::string> query_params;
+    // First access
+    EXPECT_EQ(
+        router_->find_route(HttpMethod::GET, "/test/value", found_handler_, params_, query_params_),
+        0);
+    EXPECT_EQ(params_["param"], "value");
 
-    // 第一次访问
-    EXPECT_EQ(router.find_route(HttpMethod::GET, "/test/value", found_handler, params, query_params), 0);
-    EXPECT_EQ(params["param"], "value");
+    // Clear cache
+    router_->clear_cache();
 
-    // 清除缓存
-    router.clear_cache();
+    // Clear parameters
+    params_.clear();
 
-    // 清除参数
-    params.clear();
-
-    // 再次访问，因为缓存已清除，应该重新匹配路由
-    EXPECT_EQ(router.find_route(HttpMethod::GET, "/test/value", found_handler, params, query_params), 0);
-    EXPECT_EQ(params["param"], "value");
+    // Access again, should re-match route since cache is cleared
+    EXPECT_EQ(
+        router_->find_route(HttpMethod::GET, "/test/value", found_handler_, params_, query_params_),
+        0);
+    EXPECT_EQ(params_["param"], "value");
 }
 
-// 路由缓存性能测试
-TEST(RouterCacheTest, CachePerformanceTest)
+// Route cache performance test
+TEST_F(RouterCacheTest, CachePerformanceTest)
 {
-    http_router<DummyHandler> router;
-
-    // 添加1000个不同的路由
-    for (int i = 0; i < 1000; i++) {
+    // Add 1000 different routes
+    constexpr int kNumRoutes = 1000;
+    for (int i = 0; i < kNumRoutes; ++i) {
         auto handler = std::make_shared<DummyHandler>(i);
 
         if (i % 3 == 0) {
-            // 静态路由
-            router.add_route(HttpMethod::GET, "/path" + std::to_string(i), handler);
+            // Static routes
+            router_->add_route(HttpMethod::GET, "/path" + std::to_string(i), handler);
         } else if (i % 3 == 1) {
-            // 参数化路由
-            router.add_route(HttpMethod::GET, "/users/" + std::to_string(i) + "/:id", handler);
+            // Parameterized routes
+            router_->add_route(HttpMethod::GET, "/users/" + std::to_string(i) + "/:id", handler);
         } else {
-            // 通配符路由
-            router.add_route(HttpMethod::GET, "/files/" + std::to_string(i) + "/*", handler);
+            // Wildcard routes
+            router_->add_route(HttpMethod::GET, "/files/" + std::to_string(i) + "/*", handler);
         }
     }
 
-    // 准备100个测试路径
+    // Prepare 100 test paths
     std::vector<std::string> test_paths;
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 100; ++i) {
         if (i % 3 == 0) {
             test_paths.push_back("/path" + std::to_string(i * 3));
         } else if (i % 3 == 1) {
@@ -112,27 +145,23 @@ TEST(RouterCacheTest, CachePerformanceTest)
         }
     }
 
-    std::shared_ptr<DummyHandler> found_handler;
-    std::map<std::string, std::string> params;
-    std::map<std::string, std::string> query_params;
-
-    // 第一轮 - 无缓存匹配
+    // First round - no cache matching
     auto start = std::chrono::high_resolution_clock::now();
 
     for (const auto &path : test_paths) {
-        params.clear();
-        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
+        params_.clear();
+        router_->find_route(HttpMethod::GET, path, found_handler_, params_, query_params_);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
     auto no_cache_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
 
-    // 第二轮 - 应该命中缓存
+    // Second round - should hit cache
     start = std::chrono::high_resolution_clock::now();
 
     for (const auto &path : test_paths) {
-        params.clear();
-        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
+        params_.clear();
+        router_->find_route(HttpMethod::GET, path, found_handler_, params_, query_params_);
     }
 
     end = std::chrono::high_resolution_clock::now();
@@ -141,61 +170,59 @@ TEST(RouterCacheTest, CachePerformanceTest)
 
     std::cout << "No cache: " << no_cache_time << " μs" << std::endl;
     std::cout << "With cache: " << with_cache_time << " μs" << std::endl;
-    std::cout << "Speedup: " << (no_cache_time > 0 ? (double)no_cache_time / with_cache_time : 0)
-              << "x" << std::endl;
+    if (with_cache_time > 0) {
+        std::cout << "Speedup: " << static_cast<double>(no_cache_time) / with_cache_time << "x"
+                  << std::endl;
+    }
 
-    // 期望缓存版本至少快2倍
-    EXPECT_GT((double)no_cache_time / with_cache_time, 2.0);
+    // Expect cached version to be at least 2x faster
+    EXPECT_GT(static_cast<double>(no_cache_time) / with_cache_time, 2.0);
 }
 
-// 随机访问模式测试
-TEST(RouterCacheTest, RandomAccessPattern)
+// Random access pattern test
+TEST_F(RouterCacheTest, RandomAccessPattern)
 {
-    http_router<DummyHandler> router;
-
-    // 添加大量路由
-    const int NUM_ROUTES = 2000;
+    // Add many routes
+    constexpr int kNumRoutes = 2000;
     std::vector<std::shared_ptr<DummyHandler>> handlers;
-    for (int i = 0; i < NUM_ROUTES; ++i) {
+    for (int i = 0; i < kNumRoutes; ++i) {
         handlers.push_back(std::make_shared<DummyHandler>(i));
-        router.add_route(HttpMethod::GET, "/route/" + std::to_string(i), handlers.back());
+        router_->add_route(HttpMethod::GET, "/route/" + std::to_string(i), handlers.back());
     }
 
-    // 随机访问路由
+    // Random access to routes
     std::random_device rd;
     std::mt19937 g(rd());
-    std::uniform_int_distribution<> distrib(0, NUM_ROUTES - 1);
+    std::uniform_int_distribution<> distrib(0, kNumRoutes - 1);
 
-    std::shared_ptr<DummyHandler> found_handler;
-    std::map<std::string, std::string> params;
-    std::map<std::string, std::string> query_params;
-
-    // 初次访问，填充缓存
-    for (int i = 0; i < NUM_ROUTES; ++i) {
-        router.find_route(HttpMethod::GET, "/route/" + std::to_string(i), found_handler, params, query_params);
+    // Initial access, populate cache
+    for (int i = 0; i < kNumRoutes; ++i) {
+        router_->find_route(HttpMethod::GET, "/route/" + std::to_string(i), found_handler_, params_,
+                            query_params_);
     }
 
-    // 随机访问1000次
+    // Random access 1000 times
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < 1000; ++i) {
         int idx = distrib(g);
         std::string path = "/route/" + std::to_string(idx);
-        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
+        router_->find_route(HttpMethod::GET, path, found_handler_, params_, query_params_);
     }
     auto end = std::chrono::high_resolution_clock::now();
-    auto random_access_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+    auto random_access_time =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
 
-    // 顺序访问1000次
+    // Sequential access 1000 times
     start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < 1000; ++i) {
         std::string path = "/route/" + std::to_string(i);
-        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
+        router_->find_route(HttpMethod::GET, path, found_handler_, params_, query_params_);
     }
     end = std::chrono::high_resolution_clock::now();
-    auto sequential_access_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+    auto sequential_access_time =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
 
     std::cout << "Random access time: " << random_access_time / 1000.0 << " ns/op" << std::endl;
     std::cout << "Sequential access time: " << sequential_access_time / 1000.0 << " ns/op"
               << std::endl;
 }
-

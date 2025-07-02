@@ -1,147 +1,276 @@
-#include "http_router.hpp"
+/**
+ * @file http_router_stress_test.cpp
+ * @author mt21625457 (mt21625457@163.com)
+ * @brief Stress tests for HTTP router performance under high load
+ * HTTP路由器高负载性能压力测试
+ * @version 0.1
+ * @date 2025-03-26
+ *
+ * @copyright Copyright (c) 2025
+ */
+
+#include "../include/router/router.hpp"
+#include "../include/router/router_group.hpp"
+#include "../include/router/router_impl.hpp"
+
+#include <algorithm>
+#include <chrono>
 #include <gtest/gtest.h>
 #include <memory>
-#include <string>
-#include <vector>
-#include <chrono>
-#include <iostream>
 #include <random>
+#include <string>
+#include <thread>
+#include <vector>
 
-// Handler for testing purposes
-class StressTestDummyHandler
+using namespace flc;
+
+class DummyHandler
 {
 public:
-    StressTestDummyHandler() = default;
-    explicit StressTestDummyHandler(int id) : id_(id) {}
+    DummyHandler() = default;
+    ~DummyHandler() = default;
+
+    // Copy and move operations following Google style
+    DummyHandler(const DummyHandler &) = default;
+    DummyHandler &operator=(const DummyHandler &) = default;
+    DummyHandler(DummyHandler &&) = default;
+    DummyHandler &operator=(DummyHandler &&) = default;
+
+    explicit DummyHandler(int id) : id_(id) {}
     int id() const { return id_; }
 
 private:
     int id_ = 0;
 };
 
-// Test suite for stress testing
-class HttpRouterStressTest : public ::testing::Test {
+class RouterStressTest : public ::testing::Test
+{
 protected:
-    void SetUp() override {
-        router = std::make_unique<http_router<StressTestDummyHandler>>();
-    }
+    void SetUp() override { router_ = std::make_unique<router<DummyHandler>>(); }
 
-    std::unique_ptr<http_router<StressTestDummyHandler>> router;
+    std::unique_ptr<router<DummyHandler>> router_;
 };
 
-// Performance test with a million routes
-TEST_F(HttpRouterStressTest, MillionRoutesPerformance) {
-    const int NUM_ROUTES = 1000000;
-    // Set lookup count to be equal to the cache size to properly test a hot cache scenario
-    const int NUM_LOOKUPS = 1000; // Corresponds to MAX_CACHE_SIZE in http_router.hpp
+// Test performance with large number of routes
+TEST_F(RouterStressTest, LargeNumberOfRoutes)
+{
+    constexpr int kNumRoutes = 10000;
+    std::vector<std::shared_ptr<DummyHandler>> handlers;
 
-    // Use a single handler to save memory, as the handler itself is not the focus of this test.
-    auto handler = std::make_shared<StressTestDummyHandler>(1);
+    // Add many routes
+    for (int i = 0; i < kNumRoutes; ++i) {
+        handlers.push_back(std::make_shared<DummyHandler>(i));
 
-    std::cout << "\n[ STRESS TEST ] Starting to add " << NUM_ROUTES << " routes..." << std::endl;
-    auto start_add = std::chrono::high_resolution_clock::now();
-
-    for (int i = 0; i < NUM_ROUTES; ++i) {
-        std::string path;
-        // Mix of route types to test the hybrid strategy at scale
-        switch (i % 4) {
-            case 0:
-                path = "/short" + std::to_string(i); // Expected to be stored in the hash map
-                break;
-            case 1:
-                path = "/long/path/for/trie/test/" + std::to_string(i); // Expected to be stored in the Trie
-                break;
-            case 2:
-                path = "/param/:id/user/" + std::to_string(i); // Parameterized route
-                break;
-            case 3:
-                path = "/wildcard/" + std::to_string(i) + "/*"; // Wildcard route
-                break;
-        }
-        router->add_route(HttpMethod::GET, path, handler);
-
-        // Add progress indicator every 1%
-        if ((i + 1) % (NUM_ROUTES / 100) == 0) {
-            std::cout << "[ STRESS TEST ] ... " << (static_cast<double>(i + 1) / NUM_ROUTES) * 100 << "% of routes added." << std::endl;
+        if (i % 4 == 0) {
+            // Static routes
+            router_->add_route(HttpMethod::GET, "/static" + std::to_string(i), handlers[i]);
+        } else if (i % 4 == 1) {
+            // Parameterized routes
+            router_->add_route(HttpMethod::GET, "/users/" + std::to_string(i) + "/:id",
+                               handlers[i]);
+        } else if (i % 4 == 2) {
+            // Long paths for trie
+            router_->add_route(HttpMethod::GET,
+                               "/api/v1/users/profiles/settings/advanced/" + std::to_string(i),
+                               handlers[i]);
+        } else {
+            // Wildcard routes
+            router_->add_route(HttpMethod::GET, "/files/" + std::to_string(i) + "/*", handlers[i]);
         }
     }
 
-    auto end_add = std::chrono::high_resolution_clock::now();
-    auto add_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_add - start_add).count();
-    std::cout << "[ STRESS TEST ] Finished adding routes in " << add_duration << " ms." << std::endl;
-    if (NUM_ROUTES > 0) {
-        std::cout << "[ STRESS TEST ] Average time per route addition: " << static_cast<double>(add_duration * 1000) / NUM_ROUTES << " us." << std::endl;
-    }
-
-    // Prepare lookup paths
-    std::vector<std::string> lookup_paths;
-    lookup_paths.reserve(NUM_LOOKUPS);
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> distrib(0, NUM_ROUTES - 1);
-
-    for (int i = 0; i < NUM_LOOKUPS; ++i) {
-        int route_idx = distrib(gen);
-        std::string path;
-        switch (route_idx % 4) {
-            case 0:
-                path = "/short" + std::to_string(route_idx);
-                break;
-            case 1:
-                path = "/long/path/for/trie/test/" + std::to_string(route_idx);
-                break;
-            case 2:
-                path = "/param/123/user/" + std::to_string(route_idx);
-                break;
-            case 3:
-                path = "/wildcard/" + std::to_string(route_idx) + "/some/path";
-                break;
-        }
-        lookup_paths.push_back(path);
-    }
-
-    std::shared_ptr<StressTestDummyHandler> found_handler;
+    // Test lookup performance
+    std::shared_ptr<DummyHandler> found_handler;
     std::map<std::string, std::string> params;
     std::map<std::string, std::string> query_params;
 
-    // First run to populate the cache
-    std::cout << "[ STRESS TEST ] Starting " << NUM_LOOKUPS << " lookups (no cache / populating cache)..." << std::endl;
-    auto start_lookup_nocache = std::chrono::high_resolution_clock::now();
-    for (size_t i = 0; i < lookup_paths.size(); ++i) {
-        router->find_route(HttpMethod::GET, lookup_paths[i], found_handler, params, query_params);
-        // Add progress indicator every 1%
-        if ((i + 1) % (NUM_LOOKUPS / 100) == 0) {
-             std::cout << "[ STRESS TEST ] ... " << (static_cast<double>(i + 1) / NUM_LOOKUPS) * 100 << "% of non-cached lookups completed." << std::endl;
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    // Perform many lookups
+    for (int i = 0; i < 1000; ++i) {
+        int route_idx = i % kNumRoutes;
+        params.clear();
+
+        if (route_idx % 4 == 0) {
+            router_->find_route(HttpMethod::GET, "/static" + std::to_string(route_idx),
+                                found_handler, params, query_params);
+        } else if (route_idx % 4 == 1) {
+            router_->find_route(HttpMethod::GET, "/users/" + std::to_string(route_idx) + "/123",
+                                found_handler, params, query_params);
+        } else if (route_idx % 4 == 2) {
+            router_->find_route(HttpMethod::GET,
+                                "/api/v1/users/profiles/settings/advanced/" +
+                                    std::to_string(route_idx),
+                                found_handler, params, query_params);
+        } else {
+            router_->find_route(HttpMethod::GET,
+                                "/files/" + std::to_string(route_idx) + "/test.txt", found_handler,
+                                params, query_params);
         }
     }
-    auto end_lookup_nocache = std::chrono::high_resolution_clock::now();
-    auto lookup_nocache_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_lookup_nocache - start_lookup_nocache).count();
-    std::cout << "[ STRESS TEST ] Finished non-cached lookups in " << lookup_nocache_duration << " ms." << std::endl;
-    if (NUM_LOOKUPS > 0) {
-        std::cout << "[ STRESS TEST ] Average time per lookup (no cache): " << static_cast<double>(lookup_nocache_duration * 1000) / NUM_LOOKUPS << " us." << std::endl;
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto total_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
+
+    std::cout << "Large routes stress test: " << total_time / 1000.0 << " μs per lookup"
+              << std::endl;
+
+    // Performance should be reasonable even with many routes
+    EXPECT_LT(total_time / 1000.0, 1000.0); // Less than 1ms per lookup
+}
+
+// Test memory usage under stress
+TEST_F(RouterStressTest, MemoryStressTest)
+{
+    constexpr int kNumRoutes = 5000;
+    std::vector<std::shared_ptr<DummyHandler>> handlers;
+
+    // Add routes with varying complexity
+    for (int i = 0; i < kNumRoutes; ++i) {
+        handlers.push_back(std::make_shared<DummyHandler>(i));
+
+        // Create paths with different characteristics
+        std::string base_path = "/complex/path/with/many/segments/" + std::to_string(i);
+
+        if (i % 3 == 0) {
+            // Add parameters
+            base_path += "/:param1/:param2/:param3";
+        } else if (i % 3 == 1) {
+            // Add wildcard
+            base_path += "/*";
+        }
+        // else: keep as static route
+
+        router_->add_route(HttpMethod::GET, base_path, handlers[i]);
     }
 
-    // Second run to measure performance with a hot cache
-    std::cout << "[ STRESS TEST ] Starting " << NUM_LOOKUPS << " lookups (with hot cache)..." << std::endl;
-    auto start_lookup_cache = std::chrono::high_resolution_clock::now();
-    for (size_t i = 0; i < lookup_paths.size(); ++i) {
-        router->find_route(HttpMethod::GET, lookup_paths[i], found_handler, params, query_params);
-        // Add progress indicator every 1%
-        if ((i + 1) % (NUM_LOOKUPS / 100) == 0) {
-             std::cout << "[ STRESS TEST ] ... " << (static_cast<double>(i + 1) / NUM_LOOKUPS) * 100 << "% of cached lookups completed." << std::endl;
+    // Test that we can still perform lookups efficiently
+    std::shared_ptr<DummyHandler> found_handler;
+    std::map<std::string, std::string> params;
+    std::map<std::string, std::string> query_params;
+
+    bool all_found = true;
+    for (int i = 0; i < 100; ++i) {
+        params.clear();
+        std::string test_path = "/complex/path/with/many/segments/" + std::to_string(i * 50);
+
+        if ((i * 50) % 3 == 0) {
+            test_path += "/value1/value2/value3";
+        } else if ((i * 50) % 3 == 1) {
+            test_path += "/some/file.txt";
+        }
+
+        int result =
+            router_->find_route(HttpMethod::GET, test_path, found_handler, params, query_params);
+        if (result != 0) {
+            all_found = false;
         }
     }
-    auto end_lookup_cache = std::chrono::high_resolution_clock::now();
-    auto lookup_cache_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_lookup_cache - start_lookup_cache).count();
-    std::cout << "[ STRESS TEST ] Finished cached lookups in " << lookup_cache_duration << " ms." << std::endl;
-     if (NUM_LOOKUPS > 0) {
-        std::cout << "[ STRESS TEST ] Average time per lookup (with cache): " << static_cast<double>(lookup_cache_duration * 1000) / NUM_LOOKUPS << " us." << std::endl;
+
+    EXPECT_TRUE(all_found) << "Some routes were not found in memory stress test";
+}
+
+// Test concurrent access (basic thread safety check)
+TEST_F(RouterStressTest, ConcurrentAccessTest)
+{
+    constexpr int kNumRoutes = 1000;
+    constexpr int kNumThreads = 4;
+    constexpr int kLookupsPerThread = 100;
+
+    // Add routes
+    std::vector<std::shared_ptr<DummyHandler>> handlers;
+    for (int i = 0; i < kNumRoutes; ++i) {
+        handlers.push_back(std::make_shared<DummyHandler>(i));
+        router_->add_route(HttpMethod::GET, "/route" + std::to_string(i), handlers[i]);
     }
 
-    if (lookup_cache_duration > 0) {
-        double speedup = static_cast<double>(lookup_nocache_duration) / lookup_cache_duration;
-        std::cout << "[ STRESS TEST ] Cache speedup: " << speedup << "x" << std::endl;
+    // Function for each thread to execute
+    auto thread_func = [this, kNumRoutes, kLookupsPerThread]() {
+        std::shared_ptr<DummyHandler> found_handler;
+        std::map<std::string, std::string> params;
+        std::map<std::string, std::string> query_params;
+
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> distrib(0, kNumRoutes - 1);
+
+        for (int i = 0; i < kLookupsPerThread; ++i) {
+            int route_idx = distrib(gen);
+            router_->find_route(HttpMethod::GET, "/route" + std::to_string(route_idx),
+                                found_handler, params, query_params);
+        }
+    };
+
+    // Launch threads
+    std::vector<std::thread> threads;
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < kNumThreads; ++i) {
+        threads.emplace_back(thread_func);
     }
-    
-    SUCCEED() << "Stress test completed. Check console output for performance metrics.";
-} 
+
+    // Wait for all threads to complete
+    for (auto &thread : threads) {
+        thread.join();
+    }
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto total_time =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+
+    std::cout << "Concurrent access test completed in " << total_time << " ms" << std::endl;
+
+    // Should complete in reasonable time
+    EXPECT_LT(total_time, 5000); // Less than 5 seconds
+}
+
+// Test cache performance under stress
+TEST_F(RouterStressTest, CacheStressTest)
+{
+    constexpr int kNumRoutes = 2000;
+
+    // Add routes
+    std::vector<std::shared_ptr<DummyHandler>> handlers;
+    for (int i = 0; i < kNumRoutes; ++i) {
+        handlers.push_back(std::make_shared<DummyHandler>(i));
+        router_->add_route(HttpMethod::GET, "/cached" + std::to_string(i), handlers[i]);
+    }
+
+    std::shared_ptr<DummyHandler> found_handler;
+    std::map<std::string, std::string> params;
+    std::map<std::string, std::string> query_params;
+
+    // First pass - populate cache
+    auto start_time = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < kNumRoutes; ++i) {
+        router_->find_route(HttpMethod::GET, "/cached" + std::to_string(i), found_handler, params,
+                            query_params);
+    }
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto first_pass_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
+
+    // Second pass - should benefit from cache
+    start_time = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < kNumRoutes; ++i) {
+        router_->find_route(HttpMethod::GET, "/cached" + std::to_string(i), found_handler, params,
+                            query_params);
+    }
+    end_time = std::chrono::high_resolution_clock::now();
+    auto second_pass_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
+
+    std::cout << "Cache stress test - First pass: " << first_pass_time / 1000.0 << " ms"
+              << std::endl;
+    std::cout << "Cache stress test - Second pass: " << second_pass_time / 1000.0 << " ms"
+              << std::endl;
+
+    if (second_pass_time > 0) {
+        double speedup = static_cast<double>(first_pass_time) / second_pass_time;
+        std::cout << "Cache speedup: " << speedup << "x" << std::endl;
+
+        // Second pass should be faster due to caching
+        EXPECT_GT(speedup, 1.5); // At least 1.5x faster
+    }
+}

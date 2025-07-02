@@ -1,4 +1,18 @@
-#include "http_router.hpp"
+/**
+ * @file http_router_hybrid_test.cpp
+ * @author mt21625457 (mt21625457@163.com)
+ * @brief Tests for hybrid routing strategies in HTTP router
+ * HTTP路由器混合路由策略测试
+ * @version 0.1
+ * @date 2025-03-26
+ *
+ * @copyright Copyright (c) 2025
+ */
+
+#include "../include/router/router.hpp"
+#include "../include/router/router_group.hpp"
+#include "../include/router/router_impl.hpp"
+
 #include <chrono>
 #include <gtest/gtest.h>
 #include <memory>
@@ -7,11 +21,19 @@
 #include <unordered_map>
 #include <vector>
 
+using namespace flc;
+
 class DummyHandler
 {
 public:
     DummyHandler() = default;
     ~DummyHandler() = default;
+
+    // Copy and move operations following Google style
+    DummyHandler(const DummyHandler &) = default;
+    DummyHandler &operator=(const DummyHandler &) = default;
+    DummyHandler(DummyHandler &&) = default;
+    DummyHandler &operator=(DummyHandler &&) = default;
 
     explicit DummyHandler(int id) : id_(id) {}
     int id() const { return id_; }
@@ -20,120 +42,127 @@ private:
     int id_ = 0;
 };
 
-// 测试混合路由策略基本功能
-TEST(HybridRoutingTest, BasicHybridRouting)
+class HybridRoutingTest : public ::testing::Test
 {
-    http_router<DummyHandler> router;
+protected:
+    void SetUp() override
+    {
+        router_ = std::make_unique<router<DummyHandler>>();
+        params_.clear();
+        query_params_.clear();
+        found_handler_ = nullptr;
+    }
 
-    // 添加不同类型的路由
+    std::unique_ptr<router<DummyHandler>> router_;
+    std::shared_ptr<DummyHandler> found_handler_;
+    std::map<std::string, std::string> params_;
+    std::map<std::string, std::string> query_params_;
+};
+
+// Test basic hybrid routing functionality
+TEST_F(HybridRoutingTest, BasicHybridRouting)
+{
+    // Add different types of routes
     auto h1 = std::make_shared<DummyHandler>(1);
     auto h2 = std::make_shared<DummyHandler>(2);
     auto h3 = std::make_shared<DummyHandler>(3);
 
-    // 这些路由应该被存储在哈希表中
-    router.add_route(HttpMethod::GET, "/api", h1);   // 短路径
-    router.add_route(HttpMethod::GET, "/about", h1); // 短路径
-    router.add_route(HttpMethod::GET, "/login", h1); // 短路径
+    // These routes should be stored in hash table
+    router_->add_route(HttpMethod::GET, "/api", h1);   // Short path
+    router_->add_route(HttpMethod::GET, "/about", h1); // Short path
+    router_->add_route(HttpMethod::GET, "/login", h1); // Short path
 
-    // 这些路由应该被存储在Trie树中
-    router.add_route(HttpMethod::GET, "/api/users/profiles/settings", h2);         // 长路径
-    router.add_route(HttpMethod::GET, "/api/users/profiles/photos", h2);           // 长路径
-    router.add_route(HttpMethod::GET, "/api/users/profiles/friends/requests", h2); // 长路径
+    // These routes should be stored in Trie tree
+    router_->add_route(HttpMethod::GET, "/api/users/profiles/settings", h2);         // Long path
+    router_->add_route(HttpMethod::GET, "/api/users/profiles/photos", h2);           // Long path
+    router_->add_route(HttpMethod::GET, "/api/users/profiles/friends/requests", h2); // Long path
 
-    // 这些应该被存储为参数化路由
-    router.add_route(HttpMethod::GET, "/users/:userId", h3);              // 参数化路由
-    router.add_route(HttpMethod::GET, "/api/posts/:postId/comments", h3); // 参数化路由
-    router.add_route(HttpMethod::GET, "/files/*", h3);                    // 通配符路由
+    // These should be stored as parameterized routes
+    router_->add_route(HttpMethod::GET, "/users/:userId", h3);              // Parameterized route
+    router_->add_route(HttpMethod::GET, "/api/posts/:postId/comments", h3); // Parameterized route
+    router_->add_route(HttpMethod::GET, "/files/*", h3);                    // Wildcard route
 
-    // 测试参数
-    std::shared_ptr<DummyHandler> found_handler;
-    std::map<std::string, std::string> params;
-    std::map<std::string, std::string> query_params;
+    // Test hash table routes
+    EXPECT_EQ(router_->find_route(HttpMethod::GET, "/api", found_handler_, params_, query_params_),
+              0);
+    EXPECT_EQ(found_handler_->id(), 1);
 
-    // 测试哈希表路由
-    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api", found_handler, params, query_params), 0);
-    EXPECT_EQ(found_handler->id(), 1);
+    // Test Trie tree routes
+    params_.clear();
+    EXPECT_EQ(router_->find_route(HttpMethod::GET, "/api/users/profiles/settings", found_handler_,
+                                  params_, query_params_),
+              0);
+    EXPECT_EQ(found_handler_->id(), 2);
 
-    // 测试Trie树路由
-    params.clear();
+    // Test parameterized routes
+    params_.clear();
     EXPECT_EQ(
-        router.find_route(HttpMethod::GET, "/api/users/profiles/settings", found_handler, params, query_params), 0);
-    EXPECT_EQ(found_handler->id(), 2);
-
-    // 测试参数化路由
-    params.clear();
-    EXPECT_EQ(router.find_route(HttpMethod::GET, "/users/42", found_handler, params, query_params), 0);
-    EXPECT_EQ(found_handler->id(), 3);
-    EXPECT_EQ(params["userId"], "42");
+        router_->find_route(HttpMethod::GET, "/users/42", found_handler_, params_, query_params_),
+        0);
+    EXPECT_EQ(found_handler_->id(), 3);
+    EXPECT_EQ(params_["userId"], "42");
 }
 
-// 测试混合路由系统的效率
-TEST(HybridRoutingTest, RoutingEfficiency)
+// Test efficiency of hybrid routing system
+TEST_F(HybridRoutingTest, RoutingEfficiency)
 {
-    http_router<DummyHandler> router;
-
-    // 添加大量路由以测试效率
-    const int NUM_ROUTES = 1000;
+    // Add many routes to test efficiency
+    constexpr int kNumRoutes = 1000;
     std::vector<std::shared_ptr<DummyHandler>> handlers;
 
-    for (int i = 0; i < NUM_ROUTES; i++) {
+    for (int i = 0; i < kNumRoutes; ++i) {
         handlers.push_back(std::make_shared<DummyHandler>(i));
     }
 
-    // 添加短路径 (哈希表)
-    for (int i = 0; i < 200; i++) {
+    // Add short paths (hash table)
+    for (int i = 0; i < 200; ++i) {
         std::string path = "/short" + std::to_string(i);
-        router.add_route(HttpMethod::GET, path, handlers[i]);
+        router_->add_route(HttpMethod::GET, path, handlers[i]);
     }
 
-    // 添加长路径 (Trie树)
-    for (int i = 200; i < 500; i++) {
+    // Add long paths (Trie tree)
+    for (int i = 200; i < 500; ++i) {
         std::string path = "/api/users/profiles/settings/" + std::to_string(i);
-        router.add_route(HttpMethod::GET, path, handlers[i]);
+        router_->add_route(HttpMethod::GET, path, handlers[i]);
     }
 
-    // 添加参数化路由
-    for (int i = 500; i < 800; i++) {
+    // Add parameterized routes
+    for (int i = 500; i < 800; ++i) {
         std::string path = "/users/" + std::to_string(i) + "/:id";
-        router.add_route(HttpMethod::GET, path, handlers[i]);
+        router_->add_route(HttpMethod::GET, path, handlers[i]);
     }
 
-    // 添加通配符路由
-    for (int i = 800; i < NUM_ROUTES; i++) {
+    // Add wildcard routes
+    for (int i = 800; i < kNumRoutes; ++i) {
         std::string path = "/files/" + std::to_string(i) + "/*";
-        router.add_route(HttpMethod::GET, path, handlers[i]);
+        router_->add_route(HttpMethod::GET, path, handlers[i]);
     }
 
-    // 测试参数
-    std::shared_ptr<DummyHandler> found_handler;
-    std::map<std::string, std::string> params;
-    std::map<std::string, std::string> query_params;
-
-    // 测试哈希表路由查找性能
+    // Test hash table route lookup performance
     auto start_time = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < 200; i++) {
+    for (int i = 0; i < 200; ++i) {
         std::string path = "/short" + std::to_string(i);
-        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
+        router_->find_route(HttpMethod::GET, path, found_handler_, params_, query_params_);
     }
     auto end_time = std::chrono::high_resolution_clock::now();
     auto hash_time =
         std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
 
-    // 测试Trie树路由查找性能
+    // Test Trie tree route lookup performance
     start_time = std::chrono::high_resolution_clock::now();
-    for (int i = 200; i < 500; i++) {
+    for (int i = 200; i < 500; ++i) {
         std::string path = "/api/users/profiles/settings/" + std::to_string(i);
-        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
+        router_->find_route(HttpMethod::GET, path, found_handler_, params_, query_params_);
     }
     end_time = std::chrono::high_resolution_clock::now();
     auto trie_time =
         std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
 
-    // 测试参数化路由查找性能
+    // Test parameterized route lookup performance
     start_time = std::chrono::high_resolution_clock::now();
-    for (int i = 500; i < 800; i++) {
+    for (int i = 500; i < 800; ++i) {
         std::string path = "/users/" + std::to_string(i) + "/123";
-        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
+        router_->find_route(HttpMethod::GET, path, found_handler_, params_, query_params_);
     }
     end_time = std::chrono::high_resolution_clock::now();
     auto param_time =
@@ -143,82 +172,72 @@ TEST(HybridRoutingTest, RoutingEfficiency)
     std::cout << "Trie tree lookup: " << trie_time / 300.0 << " μs per lookup" << std::endl;
     std::cout << "Parameterized lookup: " << param_time / 300.0 << " μs per lookup" << std::endl;
 
-    // 哈希表路由应该最快，然后是Trie树，最后是参数化路由
+    // Hash table routes should be fastest, then Trie tree, then parameterized routes
     EXPECT_LE(hash_time / 200.0, trie_time / 300.0);
     EXPECT_LE(trie_time / 300.0, param_time / 300.0);
 }
 
-// 测试路由查找优先级
-TEST(HybridRoutingTest, RoutingPriority)
+// Test route lookup priority
+TEST_F(HybridRoutingTest, RoutingPriority)
 {
-    http_router<DummyHandler> router;
-
-    // 创建路由处理程序
+    // Create route handlers
     auto static_handler = std::make_shared<DummyHandler>(1);
     auto param_handler = std::make_shared<DummyHandler>(2);
 
-    // 添加静态和参数化路由到同一路径模式
-    router.add_route(HttpMethod::GET, "/api/users", static_handler);    // 静态路由
-    router.add_route(HttpMethod::GET, "/api/:resource", param_handler); // 参数化路由
+    // Add static and parameterized routes to same path pattern
+    router_->add_route(HttpMethod::GET, "/api/users", static_handler);    // Static route
+    router_->add_route(HttpMethod::GET, "/api/:resource", param_handler); // Parameterized route
 
-    // 测试参数
-    std::shared_ptr<DummyHandler> found_handler;
-    std::map<std::string, std::string> params;
-    std::map<std::string, std::string> query_params;
+    // Test route matching priority - static routes should take priority over parameterized routes
+    EXPECT_EQ(
+        router_->find_route(HttpMethod::GET, "/api/users", found_handler_, params_, query_params_),
+        0);
+    EXPECT_EQ(found_handler_->id(), 1); // Should match static route
 
-    // 测试路由匹配优先级 - 静态路由应该优先于参数化路由
-    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/users", found_handler, params, query_params), 0);
-    EXPECT_EQ(found_handler->id(), 1); // 应该匹配静态路由
-
-    // 测试参数化路由
-    params.clear();
-    EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/products", found_handler, params, query_params), 0);
-    EXPECT_EQ(found_handler->id(), 2); // 应该匹配参数化路由
-    EXPECT_EQ(params["resource"], "products");
+    // Test parameterized route
+    params_.clear();
+    EXPECT_EQ(router_->find_route(HttpMethod::GET, "/api/products", found_handler_, params_,
+                                  query_params_),
+              0);
+    EXPECT_EQ(found_handler_->id(), 2); // Should match parameterized route
+    EXPECT_EQ(params_["resource"], "products");
 }
 
-// 测试路径段数匹配优化效果
-TEST(HybridRoutingTest, SegmentIndexingOptimization)
+// Test segment count matching optimization effectiveness
+TEST_F(HybridRoutingTest, SegmentIndexingOptimization)
 {
-    http_router<DummyHandler> router;
-
-    // 创建很多带有不同段数的参数化路由
+    // Create many parameterized routes with different segment counts
     auto handler1 = std::make_shared<DummyHandler>(1);
     auto handler2 = std::make_shared<DummyHandler>(2);
     auto handler3 = std::make_shared<DummyHandler>(3);
 
-    // 1段路由
-    router.add_route(HttpMethod::GET, "/:param", handler1);
+    // 1-segment routes
+    router_->add_route(HttpMethod::GET, "/:param", handler1);
 
-    // 2段路由
-    for (int i = 0; i < 100; i++) {
-        router.add_route(HttpMethod::GET, "/test" + std::to_string(i) + "/:param", handler1);
+    // 2-segment routes
+    for (int i = 0; i < 100; ++i) {
+        router_->add_route(HttpMethod::GET, "/test" + std::to_string(i) + "/:param", handler1);
     }
 
-    // 3段路由
-    for (int i = 0; i < 100; i++) {
-        router.add_route(HttpMethod::GET, "/api/:resource/:id" + std::to_string(i), handler2);
+    // 3-segment routes
+    for (int i = 0; i < 100; ++i) {
+        router_->add_route(HttpMethod::GET, "/api/:resource/:id" + std::to_string(i), handler2);
     }
 
-    // 4段路由
-    for (int i = 0; i < 100; i++) {
-        router.add_route(HttpMethod::GET, "/api/v1/:resource/:id" + std::to_string(i), handler3);
+    // 4-segment routes
+    for (int i = 0; i < 100; ++i) {
+        router_->add_route(HttpMethod::GET, "/api/v1/:resource/:id" + std::to_string(i), handler3);
     }
 
-    // 测试参数
-    std::shared_ptr<DummyHandler> found_handler;
-    std::map<std::string, std::string> params;
-    std::map<std::string, std::string> query_params;
-
-    // 测试3段路由匹配效率 - 应该直接查找3段路由
+    // Test 3-segment route matching efficiency - should directly lookup 3-segment routes
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    for (int i = 0; i < 20; i++) {
-        params.clear();
-        EXPECT_EQ(router.find_route(HttpMethod::GET, "/api/users/id" + std::to_string(i), found_handler, params,
-                                    query_params),
+    for (int i = 0; i < 20; ++i) {
+        params_.clear();
+        EXPECT_EQ(router_->find_route(HttpMethod::GET, "/api/users/id" + std::to_string(i),
+                                      found_handler_, params_, query_params_),
                   0);
-        EXPECT_EQ(found_handler->id(), 2);
+        EXPECT_EQ(found_handler_->id(), 2);
     }
 
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -228,43 +247,36 @@ TEST(HybridRoutingTest, SegmentIndexingOptimization)
     std::cout << "Segment index optimization: " << segment_optimized_time / 20.0 << " μs per lookup"
               << std::endl;
 
-    // 性能测试，没有硬性断言
+    // Performance test, no hard assertions
 }
 
-// 测试长路径前缀共享效率
-TEST(HybridRoutingTest, TriePrefixSharing)
+// Test long path prefix sharing efficiency
+TEST_F(HybridRoutingTest, TriePrefixSharing)
 {
-    http_router<DummyHandler> router;
-
-    // 创建大量具有共同前缀的路由
-    const int NUM_ROUTES = 1000;
+    // Create many routes with common prefixes
+    constexpr int kNumRoutes = 1000;
     std::vector<std::shared_ptr<DummyHandler>> handlers;
 
-    for (int i = 0; i < NUM_ROUTES; i++) {
+    for (int i = 0; i < kNumRoutes; ++i) {
         handlers.push_back(std::make_shared<DummyHandler>(i));
 
-        // 所有路由共享 "/api/v1/users/profiles" 前缀
+        // All routes share "/api/v1/users/profiles" prefix
         std::string path = "/api/v1/users/profiles/setting" + std::to_string(i);
-        router.add_route(HttpMethod::GET, path, handlers[i]);
+        router_->add_route(HttpMethod::GET, path, handlers[i]);
     }
 
-    // 测试参数
-    std::shared_ptr<DummyHandler> found_handler;
-    std::map<std::string, std::string> params;
-    std::map<std::string, std::string> query_params;
-
-    // 随机访问一些路由，测量性能
+    // Randomly access some routes, measure performance
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<> distrib(0, NUM_ROUTES - 1);
+    std::uniform_int_distribution<> distrib(0, kNumRoutes - 1);
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 100; ++i) {
         int idx = distrib(gen);
         std::string path = "/api/v1/users/profiles/setting" + std::to_string(idx);
-        router.find_route(HttpMethod::GET, path, found_handler, params, query_params);
-        EXPECT_EQ(found_handler->id(), idx);
+        router_->find_route(HttpMethod::GET, path, found_handler_, params_, query_params_);
+        EXPECT_EQ(found_handler_->id(), idx);
     }
 
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -274,6 +286,5 @@ TEST(HybridRoutingTest, TriePrefixSharing)
     std::cout << "Trie tree with shared prefixes: " << trie_time / 100.0 << " μs per lookup"
               << std::endl;
 
-    // 仅限性能测试，不进行硬性断言
+    // Performance test only, no hard assertions
 }
-

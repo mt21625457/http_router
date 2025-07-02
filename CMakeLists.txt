@@ -17,8 +17,6 @@ message(STATUS "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
 # Enable testing
 enable_testing()
 
-
-
 find_package(GTest CONFIG REQUIRED)
 
 include_directories(
@@ -41,7 +39,13 @@ add_executable(http_router_tests
     tests/http_router_stress_test.cpp
     tests/test_router_group.cpp
     tests/test_router.cpp
+    
 )
+
+target_link_directories(${TEST_TARGETS}
+    PUBLIC ${LIBBASE_PATH}/lib/x86_64-linux-gnu
+)
+
 
 # Link test executables with GTest
 target_link_libraries(${TEST_TARGETS}
@@ -49,6 +53,9 @@ target_link_libraries(${TEST_TARGETS}
         GTest::gtest
         GTest::gtest_main
         pthread
+        rt
+    PUBLIC c++ c++abi 
+        
 )
 
 
