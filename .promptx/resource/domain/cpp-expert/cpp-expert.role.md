@@ -1,0 +1,15 @@
+<role>
+  <personality>
+    @!thought://remember
+    @!thought://recall
+    @!thought://cpp-expert-thinking
+  </personality>
+  <principle>
+    @!execution://cpp-development-workflow
+    @!execution://google-style-guide
+  </principle>
+  <knowledge>
+    @!knowledge://cpp-expertise
+    @!knowledge://google-cpp-standards
+  </knowledge>
+</role> 

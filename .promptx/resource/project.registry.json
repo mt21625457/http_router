@@ -1,0 +1,103 @@
+{
+  "version": "2.0.0",
+  "source": "project",
+  "metadata": {
+    "version": "2.0.0",
+    "description": "project 级资源注册表",
+    "createdAt": "2025-07-02T00:45:30.515Z",
+    "updatedAt": "2025-07-02T00:45:30.516Z",
+    "resourceCount": 6
+  },
+  "resources": [
+    {
+      "id": "cpp-expert",
+      "source": "project",
+      "protocol": "role",
+      "name": "Cpp Expert 角色",
+      "description": "专业角色，提供特定领域的专业能力",
+      "reference": "@project://.promptx/resource/domain/cpp-expert/cpp-expert.role.md",
+      "metadata": {
+        "createdAt": "2025-07-02T00:45:30.515Z",
+        "updatedAt": "2025-07-02T00:45:30.515Z",
+        "scannedAt": "2025-07-02T00:45:30.515Z"
+      }
+    },
+    {
+      "id": "cpp-expert-thinking",
+      "source": "project",
+      "protocol": "thought",
+      "name": "Cpp Expert Thinking 思维模式",
+      "description": "思维模式，指导AI的思考方式",
+      "reference": "@project://.promptx/resource/domain/cpp-expert/thought/cpp-expert-thinking.thought.md",
+      "metadata": {
+        "createdAt": "2025-07-02T00:45:30.515Z",
+        "updatedAt": "2025-07-02T00:45:30.515Z",
+        "scannedAt": "2025-07-02T00:45:30.515Z"
+      }
+    },
+    {
+      "id": "cpp-development-workflow",
+      "source": "project",
+      "protocol": "execution",
+      "name": "Cpp Development Workflow 执行模式",
+      "description": "执行模式，定义具体的行为模式",
+      "reference": "@project://.promptx/resource/domain/cpp-expert/execution/cpp-development-workflow.execution.md",
+      "metadata": {
+        "createdAt": "2025-07-02T00:45:30.515Z",
+        "updatedAt": "2025-07-02T00:45:30.515Z",
+        "scannedAt": "2025-07-02T00:45:30.515Z"
+      }
+    },
+    {
+      "id": "google-style-guide",
+      "source": "project",
+      "protocol": "execution",
+      "name": "Google Style Guide 执行模式",
+      "description": "执行模式，定义具体的行为模式",
+      "reference": "@project://.promptx/resource/domain/cpp-expert/execution/google-style-guide.execution.md",
+      "metadata": {
+        "createdAt": "2025-07-02T00:45:30.515Z",
+        "updatedAt": "2025-07-02T00:45:30.515Z",
+        "scannedAt": "2025-07-02T00:45:30.515Z"
+      }
+    },
+    {
+      "id": "cpp-expertise",
+      "source": "project",
+      "protocol": "knowledge",
+      "name": "Cpp Expertise 知识库",
+      "description": "知识库，提供专业知识和信息",
+      "reference": "@project://.promptx/resource/domain/cpp-expert/knowledge/cpp-expertise.knowledge.md",
+      "metadata": {
+        "createdAt": "2025-07-02T00:45:30.516Z",
+        "updatedAt": "2025-07-02T00:45:30.516Z",
+        "scannedAt": "2025-07-02T00:45:30.516Z"
+      }
+    },
+    {
+      "id": "google-cpp-standards",
+      "source": "project",
+      "protocol": "knowledge",
+      "name": "Google Cpp Standards 知识库",
+      "description": "知识库，提供专业知识和信息",
+      "reference": "@project://.promptx/resource/domain/cpp-expert/knowledge/google-cpp-standards.knowledge.md",
+      "metadata": {
+        "createdAt": "2025-07-02T00:45:30.516Z",
+        "updatedAt": "2025-07-02T00:45:30.516Z",
+        "scannedAt": "2025-07-02T00:45:30.516Z"
+      }
+    }
+  ],
+  "stats": {
+    "totalResources": 6,
+    "byProtocol": {
+      "role": 1,
+      "thought": 1,
+      "execution": 2,
+      "knowledge": 2
+    },
+    "bySource": {
+      "project": 6
+    }
+  }
+}

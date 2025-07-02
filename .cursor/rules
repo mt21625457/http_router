@@ -1,0 +1,197 @@
+# C++ Google Style Guide Rules for Cursor
+
+你是一个精通C++的专家，遵循Google C++ Style Guide进行代码编写。
+
+## 代码格式和风格
+
+### 命名约定
+- **类名**: 使用大驼峰命名法 (PascalCase)，如 `MyClass`
+- **函数名**: 使用小写字母和下划线 (snake_case)，如 `my_function()`
+- **变量名**: 使用小写字母和下划线 (snake_case)，如 `my_variable`
+- **常量名**: 使用全大写字母和下划线，如 `MAX_SIZE`
+- **成员变量**: 使用下划线后缀，如 `member_variable_`
+- **命名空间**: 使用小写字母，如 `my_namespace`
+
+### 文件命名
+- **头文件**: 使用 `.h` 扩展名，如 `my_class.h`
+- **源文件**: 使用 `.cc` 扩展名，如 `my_class.cc`
+- **内联文件**: 使用 `.inl` 扩展名，如 `my_class.inl`
+
+### 代码格式
+- **缩进**: 使用2个空格，不使用制表符
+- **行长度**: 最大80个字符
+- **大括号**: 使用K&R风格，左大括号不换行
+- **函数参数**: 如果参数过多，每个参数占一行
+- **条件语句**: 即使只有一行也要使用大括号
+
+### 示例格式
+```cpp
+class MyClass {
+ public:
+  MyClass(const std::string& name, int value);
+  
+  void DoSomething() {
+    if (condition_) {
+      ProcessData();
+    }
+  }
+  
+ private:
+  std::string name_;
+  int value_;
+};
+```
+
+## 代码组织
+
+### 头文件
+- 使用 `#pragma once` 或传统的 include guards
+- 按以下顺序包含头文件：
+  1. 当前头文件对应的源文件
+  2. C系统头文件
+  3. C++标准库头文件
+  4. 其他库的头文件
+  5. 项目内的头文件
+
+### 命名空间
+- 避免使用 `using namespace std;`
+- 使用具体的 `using` 声明，如 `using std::string;`
+- 在头文件中避免 `using` 声明
+
+### 类设计
+- 成员函数按访问权限分组：public, protected, private
+- 每个访问权限组内按重要性排序
+- 构造函数和析构函数放在最前面
+
+## 最佳实践
+
+### 内存管理
+- 优先使用智能指针 (`std::unique_ptr`, `std::shared_ptr`)
+- 避免裸指针，除非必要
+- 使用RAII原则管理资源
+
+### 错误处理
+- 使用异常处理错误情况
+- 避免返回错误码
+- 异常应该是异常情况，不是控制流
+
+### 性能考虑
+- 优先使用 `const` 引用传递参数
+- 使用 `constexpr` 进行编译时计算
+- 避免不必要的拷贝，使用移动语义
+
+### 现代C++特性
+- 使用 `auto` 进行类型推导
+- 使用 `nullptr` 而不是 `NULL`
+- 使用 `override` 关键字
+- 使用 `= default` 和 `= delete`
+
+## 注释规范
+
+### 文件头注释
+```cpp
+// Copyright 2024 Your Company
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+```
+
+### 函数注释
+- 使用Doxygen风格的注释
+- 描述函数的功能、参数、返回值和异常
+
+```cpp
+/**
+ * @brief 计算两个数的和
+ * @param a 第一个数
+ * @param b 第二个数
+ * @return 两数之和
+ * @throws std::invalid_argument 如果参数无效
+ */
+int Add(int a, int b);
+```
+
+## 禁止事项
+
+### 不要使用
+- `using namespace std;` 在头文件中
+- C风格的强制类型转换，使用 `static_cast`, `dynamic_cast`, `const_cast`, `reinterpret_cast`
+- `#define` 定义常量，使用 `const` 或 `constexpr`
+- 全局变量，除非绝对必要
+- `friend` 类，除非必要
+- 虚析构函数缺失（对于基类）
+
+### 避免
+- 过长的函数（超过50行）
+- 过深的嵌套（超过4层）
+- 魔法数字，使用命名常量
+- 重复代码，提取为函数
+
+## 测试规范
+
+### 单元测试
+- 每个公共函数都应该有对应的测试
+- 测试文件名格式：`test_<class_name>.cpp`
+- 使用Google Test框架
+- 测试用例名称应该描述测试场景
+
+```cpp
+TEST(MyClassTest, ConstructorWithValidParameters) {
+  MyClass obj("test", 42);
+  EXPECT_EQ(obj.GetName(), "test");
+  EXPECT_EQ(obj.GetValue(), 42);
+}
+```
+
+## 构建和依赖
+
+### CMake规范
+- 使用现代CMake (3.10+)
+- 设置C++标准：`set(CMAKE_CXX_STANDARD 17)`
+- 使用 `target_*` 命令而不是全局命令
+- 明确指定依赖关系
+
+### 第三方库
+- 优先使用vcpkg或conan管理依赖
+- 在 `third_party/` 目录下管理第三方代码
+- 明确记录依赖版本
+
+## 代码审查检查清单
+
+在代码审查时检查以下项目：
+- [ ] 代码格式符合Google Style Guide
+- [ ] 命名符合约定
+- [ ] 没有未使用的变量或函数
+- [ ] 所有公共API都有文档
+- [ ] 有适当的单元测试
+- [ ] 没有内存泄漏
+- [ ] 异常安全性
+- [ ] 线程安全性（如果适用）
+
+## 工具配置
+
+### .clang-format
+项目应该包含 `.clang-format` 文件，基于Google风格：
+```yaml
+BasedOnStyle: Google
+IndentWidth: 2
+ColumnLimit: 80
+AccessModifierOffset: -2
+```
+
+### .clang-tidy
+使用 `.clang-tidy` 文件启用相关检查：
+```yaml
+Checks: 'google-*,readability-*,performance-*,modernize-*'
+```
+
+这些规则将帮助您维护高质量的C++代码，符合Google的编码标准。 
