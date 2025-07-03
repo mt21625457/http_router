@@ -723,12 +723,14 @@ TEST_F(RouterOptimizationTest, ThreadSafety_BasicConcurrentAccess)
     // 创建多个线程同时进行路由查找 - Create multiple threads for concurrent route lookup
     for (int t = 0; t < num_threads; ++t) {
         threads.emplace_back([&, t]() {
-            // 使用原子安全的shared_ptr - Use atomic safe shared_ptr
-            std::map<std::string, std::string> params, query_params;
-            auto result = router_->find_route(HttpMethod::GET, "/api/test" + std::to_string(t % 5),
-                                              params, query_params);
-            if (result.has_value()) {
-                success_count++;
+            // 每个线程执行多次操作 - Each thread performs multiple operations
+            for (int i = 0; i < operations_per_thread; ++i) {
+                std::map<std::string, std::string> params, query_params;
+                auto result = router_->find_route(HttpMethod::GET, "/api/test" + std::to_string((t + i) % 5),
+                                                  params, query_params);
+                if (result.has_value()) {
+                    success_count++;
+                }
             }
         });
     }

@@ -36,10 +36,18 @@ using namespace flc;
 class TestHandler
 {
 public:
+    TestHandler() = default;
+    explicit TestHandler(int id) : id_(id) {}
+    
     void operator()()
     {
         // 空实现
     }
+    
+    int id() const { return id_; }
+    
+private:
+    int id_ = 0;
 };
 
 /**
@@ -408,8 +416,8 @@ TEST_F(RouterOptimizationIntegrationTest, Memory_LargeDataHandling)
 
     result = router_->find_route(HttpMethod::GET, query_path, params, query_params);
     EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(params.size(), 100);
-    EXPECT_EQ(params["param50"], "value50");
+    EXPECT_EQ(query_params.size(), 100);
+    EXPECT_EQ(query_params["param50"], "value50");
 }
 
 /**
@@ -454,20 +462,20 @@ TEST_F(RouterOptimizationIntegrationTest, Boundary_PathEdgeCases)
 TEST_F(RouterOptimizationIntegrationTest, Regression_ComprehensiveFunctionality)
 {
     // 添加各种类型的路由 - Add various types of routes
-    // 静态路由 - Static routes
-    router_->add_route(HttpMethod::GET, "/api/health", TestHandler{});
-    router_->add_route(HttpMethod::POST, "/api/login", TestHandler{});
+    // 静态路由 - Static routes (handler ID 1)
+    router_->add_route(HttpMethod::GET, "/api/health", TestHandler{1});
+    router_->add_route(HttpMethod::POST, "/api/login", TestHandler{1});
 
-    // 参数化路由 - Parameterized routes
-    router_->add_route(HttpMethod::GET, "/api/users/:id", TestHandler{});
-    router_->add_route(HttpMethod::PUT, "/api/users/:id/profile", TestHandler{});
+    // 参数化路由 - Parameterized routes (handler ID 2)
+    router_->add_route(HttpMethod::GET, "/api/users/:id", TestHandler{2});
+    router_->add_route(HttpMethod::PUT, "/api/users/:id/profile", TestHandler{2});
 
-    // 通配符路由 - Wildcard routes
-    router_->add_route(HttpMethod::GET, "/static/*", TestHandler{});
-    router_->add_route(HttpMethod::GET, "/files/:type/*", TestHandler{});
+    // 通配符路由 - Wildcard routes (handler ID 3)
+    router_->add_route(HttpMethod::GET, "/static/*", TestHandler{3});
+    router_->add_route(HttpMethod::GET, "/files/:type/*", TestHandler{3});
 
-    // 复杂路由 - Complex routes
-    router_->add_route(HttpMethod::GET, "/api/:version/users/:id/posts/:post_id", TestHandler{});
+    // 复杂路由 - Complex routes (handler ID 4)
+    router_->add_route(HttpMethod::GET, "/api/:version/users/:id/posts/:post_id", TestHandler{4});
 
     // 全面测试所有路由类型 - Comprehensive test of all route types
     std::vector<std::tuple<std::string, HttpMethod, int, std::map<std::string, std::string>,
@@ -504,7 +512,10 @@ TEST_F(RouterOptimizationIntegrationTest, Regression_ComprehensiveFunctionality)
         auto result = router_->find_route(method, path, params, query_params);
         EXPECT_TRUE(result.has_value()) << "Failed to find route for path: " << path;
 
-        EXPECT_EQ(params["id"], std::to_string(expected_id)) << "Wrong handler for path: " << path;
+        // Check handler ID if result is available
+        if (result.has_value()) {
+            EXPECT_EQ(result.value().get().id(), expected_id) << "Wrong handler for path: " << path;
+        }
 
         for (const auto &[key, value] : expected_params) {
             EXPECT_EQ(params[key], value)

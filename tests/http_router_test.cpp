@@ -414,11 +414,14 @@ TEST_F(HttpRouterTest, PerformanceBenchmark)
     EXPECT_EQ(result.value().get().id(), 100);
 
     params_.clear();
+    // Test a route with :id parameter (route 103: i % 5 == 3 creates /products/:category/103/:id)
+    // 103 % 5 = 3 -> DELETE method
     EXPECT_TRUE(router_
-                    ->find_route(HttpMethod::POST, "/api/v1/users/profiles/settings/101", params_,
+                    ->find_route(HttpMethod::DELETE, "/products/electronics/103/456", params_,
                                  query_params_)
                     .has_value());
-    EXPECT_EQ(params_["id"], "101");
+    EXPECT_EQ(params_["category"], "electronics");
+    EXPECT_EQ(params_["id"], "456");
 }
 
 TEST_F(HttpRouterTest, RouteCaching)
