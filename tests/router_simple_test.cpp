@@ -154,8 +154,10 @@ TEST_F(SimpleRouterTest, LambdaExpressionSupport)
 
         router<decltype(simple_lambda)> lambda_router;
         lambda_router.add_route(HttpMethod::GET, "/lambda/simple", std::move(simple_lambda));
+        
+        std::map<std::string, std::string> local_params, local_query_params;
         auto result =
-            lambda_router.find_route(HttpMethod::GET, "/lambda/simple", params_, query_params_);
+            lambda_router.find_route(HttpMethod::GET, "/lambda/simple", local_params, local_query_params);
         EXPECT_TRUE(result.has_value());
         if (result.has_value()) {
             result->get()(); // 调用lambda
@@ -170,8 +172,9 @@ TEST_F(SimpleRouterTest, LambdaExpressionSupport)
         capture_router.add_route(HttpMethod::GET, "/lambda/capture",
                                  std::move(lambda_with_capture));
 
+        std::map<std::string, std::string> local_params, local_query_params;
         auto result =
-            capture_router.find_route(HttpMethod::GET, "/lambda/capture", params_, query_params_);
+            capture_router.find_route(HttpMethod::GET, "/lambda/capture", local_params, local_query_params);
         EXPECT_TRUE(result.has_value());
 
         if (result.has_value()) {

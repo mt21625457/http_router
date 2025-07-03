@@ -12,14 +12,17 @@
 #pragma once
 
 #include <algorithm> // Required for std::transform and std::count
+#include <atomic>
 #include <chrono>
 #include <concepts>
 #include <functional>
+#include <immintrin.h> // For SIMD optimizations
 #include <list>
 #include <map>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -27,6 +30,197 @@
 #include "tsl/htrie_map.h"
 
 namespace flc {
+
+/**
+ * @brief HTTP method enumeration
+ *        HTTP方法枚举
+ *
+ * Supports all standard HTTP methods plus UNKNOWN for error handling
+ * 支持所有标准HTTP方法，外加用于错误处理的UNKNOWN
+ */
+enum class HttpMethod
+{
+    GET,     ///< HTTP GET method - 获取资源
+    POST,    ///< HTTP POST method - 创建资源
+    PUT,     ///< HTTP PUT method - 更新资源
+    DELETE,  ///< HTTP DELETE method - 删除资源
+    PATCH,   ///< HTTP PATCH method - 部分更新资源
+    HEAD,    ///< HTTP HEAD method - 获取资源头信息
+    OPTIONS, ///< HTTP OPTIONS method - 获取支持的方法
+    CONNECT, ///< HTTP CONNECT method - 建立隧道连接
+    TRACE,   ///< HTTP TRACE method - 回显请求
+    UNKNOWN  ///< Unknown or unsupported method - 未知或不支持的方法
+};
+
+/**
+ * @brief High-performance object pool for memory optimization
+ *        高性能对象池用于内存优化
+ */
+template<typename T, size_t PoolSize = 1024>
+class object_pool {
+private:
+    alignas(64) std::array<T, PoolSize> pool_;
+    alignas(64) std::atomic<size_t> next_index_{0};
+    alignas(64) std::vector<std::atomic<bool>> used_;
+    
+public:
+    object_pool() : used_(PoolSize) {
+        for (auto& flag : used_) {
+            flag.store(false, std::memory_order_relaxed);
+        }
+    }
+    
+    T* acquire() {
+        for (size_t i = 0; i < PoolSize; ++i) {
+            size_t idx = (next_index_.fetch_add(1, std::memory_order_acq_rel)) % PoolSize;
+            bool expected = false;
+            if (used_[idx].compare_exchange_weak(expected, true, std::memory_order_acq_rel)) {
+                return &pool_[idx];
+            }
+        }
+        return nullptr; // Pool exhausted, fallback to regular allocation
+    }
+    
+    void release(T* obj) {
+        if (obj >= &pool_[0] && obj < &pool_[PoolSize]) {
+            size_t idx = obj - &pool_[0];
+            used_[idx].store(false, std::memory_order_release);
+        }
+    }
+};
+
+/**
+ * @brief Fast path cache for common routes
+ *        常用路由的快速路径缓存
+ */
+template<typename Handler>
+class fast_path_cache {
+private:
+    static constexpr size_t CACHE_SIZE = 256;
+    struct cache_entry {
+        std::atomic<uint64_t> key{0};
+        std::atomic<Handler*> handler{nullptr};
+    };
+    alignas(64) std::array<cache_entry, CACHE_SIZE> cache_;
+    
+    constexpr uint64_t hash_path(HttpMethod method, std::string_view path) const noexcept {
+        uint64_t hash = static_cast<uint64_t>(method);
+        for (char c : path) {
+            hash = hash * 31 + static_cast<unsigned char>(c);
+        }
+        return hash;
+    }
+    
+public:
+    Handler* lookup(HttpMethod method, std::string_view path) noexcept {
+        uint64_t key = hash_path(method, path);
+        size_t idx = key % CACHE_SIZE;
+        
+        if (cache_[idx].key.load(std::memory_order_acquire) == key) {
+            return cache_[idx].handler.load(std::memory_order_acquire);
+        }
+        return nullptr;
+    }
+    
+    void store(HttpMethod method, std::string_view path, Handler* handler) noexcept {
+        uint64_t key = hash_path(method, path);
+        size_t idx = key % CACHE_SIZE;
+        
+        cache_[idx].key.store(key, std::memory_order_release);
+        cache_[idx].handler.store(handler, std::memory_order_release);
+    }
+};
+
+/**
+ * @brief Thread-local cache for route lookups
+ *        路由查找的线程本地缓存
+ */
+template<typename Handler>
+class thread_local_cache {
+private:
+    static constexpr size_t TL_CACHE_SIZE = 64;
+    struct tl_entry {
+        std::string path;
+        HttpMethod method;
+        Handler* handler;
+        bool valid;
+    };
+    thread_local static std::array<tl_entry, TL_CACHE_SIZE> cache_;
+    thread_local static size_t current_index_;
+    
+public:
+    static Handler* lookup(HttpMethod method, const std::string& path) {
+        for (const auto& entry : cache_) {
+            if (entry.valid && entry.method == method && entry.path == path) {
+                return entry.handler;
+            }
+        }
+        return nullptr;
+    }
+    
+    static void store(HttpMethod method, const std::string& path, Handler* handler) {
+        auto& entry = cache_[current_index_];
+        entry.method = method;
+        entry.path = path;
+        entry.handler = handler;
+        entry.valid = true;
+        current_index_ = (current_index_ + 1) % TL_CACHE_SIZE;
+    }
+};
+
+template<typename Handler>
+thread_local std::array<typename thread_local_cache<Handler>::tl_entry, 
+                       thread_local_cache<Handler>::TL_CACHE_SIZE> 
+                       thread_local_cache<Handler>::cache_{};
+
+template<typename Handler>
+thread_local size_t thread_local_cache<Handler>::current_index_ = 0;
+
+/**
+ * @brief SIMD-optimized string comparison
+ *        SIMD优化的字符串比较
+ */
+inline bool simd_string_compare(const char* a, const char* b, size_t len) noexcept {
+#ifdef __AVX2__
+    if (len >= 32) {
+        size_t simd_len = len - (len % 32);
+        for (size_t i = 0; i < simd_len; i += 32) {
+            __m256i va = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a + i));
+            __m256i vb = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b + i));
+            __m256i cmp = _mm256_cmpeq_epi8(va, vb);
+            if (_mm256_movemask_epi8(cmp) != 0xFFFFFFFF) {
+                return false;
+            }
+        }
+        
+        // Compare remaining bytes
+        for (size_t i = simd_len; i < len; ++i) {
+            if (a[i] != b[i]) return false;
+        }
+        return true;
+    }
+#endif
+    return std::memcmp(a, b, len) == 0;
+}
+
+/**
+ * @brief Custom hash function optimized for path strings
+ *        针对路径字符串优化的自定义哈希函数
+ */
+struct optimized_path_hash {
+    constexpr std::size_t operator()(const std::string& path) const noexcept {
+        // FNV-1a hash optimized for paths
+        constexpr std::size_t FNV_OFFSET_BASIS = 14695981039346656037ULL;
+        constexpr std::size_t FNV_PRIME = 1099511628211ULL;
+        
+        std::size_t hash = FNV_OFFSET_BASIS;
+        for (unsigned char c : path) {
+            hash ^= c;
+            hash *= FNV_PRIME;
+        }
+        return hash;
+    }
+};
 
 /**
  * @brief Concept to ensure Handler is a callable functor (supports lambda expressions)
@@ -57,39 +251,18 @@ template <CallableHandler Handler>
 class router_group;
 
 /**
- * @brief HTTP method enumeration
- *        HTTP方法枚举
- *
- * Supports all standard HTTP methods plus UNKNOWN for error handling
- * 支持所有标准HTTP方法，外加用于错误处理的UNKNOWN
- */
-enum class HttpMethod
-{
-    GET,     ///< HTTP GET method - 获取资源
-    POST,    ///< HTTP POST method - 创建资源
-    PUT,     ///< HTTP PUT method - 更新资源
-    DELETE,  ///< HTTP DELETE method - 删除资源
-    PATCH,   ///< HTTP PATCH method - 部分更新资源
-    HEAD,    ///< HTTP HEAD method - 获取资源头信息
-    OPTIONS, ///< HTTP OPTIONS method - 获取支持的方法
-    CONNECT, ///< HTTP CONNECT method - 建立隧道连接
-    TRACE,   ///< HTTP TRACE method - 回显请求
-    UNKNOWN  ///< Unknown or unsupported method - 未知或不支持的方法
-};
-
-/**
- * @brief Convert HttpMethod enum to string representation
- *        将HttpMethod枚举转换为字符串表示
+ * @brief Convert HttpMethod enum to string representation (compile-time optimized)
+ *        将HttpMethod枚举转换为字符串表示（编译时优化）
  *
  * @param method The HTTP method to convert / 要转换的HTTP方法
- * @return std::string String representation of the method / 方法的字符串表示
+ * @return constexpr string view for compile-time evaluation / 用于编译时求值的constexpr字符串视图
  *
  * @example
  * ```cpp
- * std::string method_str = to_string(HttpMethod::GET); // Returns "GET"
+ * constexpr auto method_str = to_string_view(HttpMethod::GET); // Returns "GET"
  * ```
  */
-inline std::string to_string(HttpMethod method)
+constexpr std::string_view to_string_view(HttpMethod method) noexcept
 {
     switch (method) {
     case HttpMethod::GET:
@@ -116,8 +289,25 @@ inline std::string to_string(HttpMethod method)
 }
 
 /**
- * @brief Convert string to HttpMethod enum (case-insensitive)
- *        将字符串转换为HttpMethod枚举（不区分大小写）
+ * @brief Convert HttpMethod enum to string representation (legacy version)
+ *        将HttpMethod枚举转换为字符串表示（传统版本）
+ *
+ * @param method The HTTP method to convert / 要转换的HTTP方法
+ * @return std::string String representation of the method / 方法的字符串表示
+ *
+ * @example
+ * ```cpp
+ * std::string method_str = to_string(HttpMethod::GET); // Returns "GET"
+ * ```
+ */
+inline std::string to_string(HttpMethod method)
+{
+    return std::string(to_string_view(method));
+}
+
+/**
+ * @brief Convert string to HttpMethod enum (case-insensitive, optimized)
+ *        将字符串转换为HttpMethod枚举（不区分大小写，优化版）
  *
  * @param s The string to convert / 要转换的字符串
  * @return HttpMethod The corresponding HTTP method / 对应的HTTP方法
@@ -128,8 +318,58 @@ inline std::string to_string(HttpMethod method)
  * HttpMethod method2 = from_string("POST"); // Returns HttpMethod::POST
  * ```
  */
+constexpr HttpMethod from_string_fast(std::string_view s) noexcept
+{
+    // Optimized case-insensitive comparison using bit manipulation
+    if (s.length() == 3) {
+        if ((s[0] | 0x20) == 'g' && (s[1] | 0x20) == 'e' && (s[2] | 0x20) == 't')
+            return HttpMethod::GET;
+        if ((s[0] | 0x20) == 'p' && (s[1] | 0x20) == 'u' && (s[2] | 0x20) == 't')
+            return HttpMethod::PUT;
+    } else if (s.length() == 4) {
+        if ((s[0] | 0x20) == 'p' && (s[1] | 0x20) == 'o' && 
+            (s[2] | 0x20) == 's' && (s[3] | 0x20) == 't')
+            return HttpMethod::POST;
+        if ((s[0] | 0x20) == 'h' && (s[1] | 0x20) == 'e' && 
+            (s[2] | 0x20) == 'a' && (s[3] | 0x20) == 'd')
+            return HttpMethod::HEAD;
+    } else if (s.length() == 5) {
+        if ((s[0] | 0x20) == 'p' && (s[1] | 0x20) == 'a' && (s[2] | 0x20) == 't' && 
+            (s[3] | 0x20) == 'c' && (s[4] | 0x20) == 'h')
+            return HttpMethod::PATCH;
+        if ((s[0] | 0x20) == 't' && (s[1] | 0x20) == 'r' && (s[2] | 0x20) == 'a' && 
+            (s[3] | 0x20) == 'c' && (s[4] | 0x20) == 'e')
+            return HttpMethod::TRACE;
+    } else if (s.length() == 6) {
+        if ((s[0] | 0x20) == 'd' && (s[1] | 0x20) == 'e' && (s[2] | 0x20) == 'l' && 
+            (s[3] | 0x20) == 'e' && (s[4] | 0x20) == 't' && (s[5] | 0x20) == 'e')
+            return HttpMethod::DELETE;
+    } else if (s.length() == 7) {
+        if ((s[0] | 0x20) == 'o' && (s[1] | 0x20) == 'p' && (s[2] | 0x20) == 't' && 
+            (s[3] | 0x20) == 'i' && (s[4] | 0x20) == 'o' && (s[5] | 0x20) == 'n' && 
+            (s[6] | 0x20) == 's')
+            return HttpMethod::OPTIONS;
+        if ((s[0] | 0x20) == 'c' && (s[1] | 0x20) == 'o' && (s[2] | 0x20) == 'n' && 
+            (s[3] | 0x20) == 'n' && (s[4] | 0x20) == 'e' && (s[5] | 0x20) == 'c' && 
+            (s[6] | 0x20) == 't')
+            return HttpMethod::CONNECT;
+    }
+    return HttpMethod::UNKNOWN;
+}
+
+/**
+ * @brief Convert string to HttpMethod enum (case-insensitive, legacy version)
+ *        将字符串转换为HttpMethod枚举（不区分大小写，传统版本）
+ */
 inline HttpMethod from_string(std::string_view s)
 {
+    // Try fast path first
+    HttpMethod result = from_string_fast(s);
+    if (result != HttpMethod::UNKNOWN) {
+        return result;
+    }
+
+    // Fallback to allocation-based approach for edge cases
     std::string upper_s;
     upper_s.reserve(s.length());
     std::transform(s.begin(), s.end(), std::back_inserter(upper_s), ::toupper);
@@ -238,10 +478,16 @@ private:
     // 针对不同路由模式优化的存储结构
 
     /**
-     * @brief Hash map storage for short static routes (O(1) lookup)
-     *        短静态路由的哈希表存储（O(1)查找）
+     * @brief Fast path cache for O(1) common route lookups
+     *        常用路由O(1)查找的快速路径缓存
      */
-    std::unordered_map<HttpMethod, std::unordered_map<std::string, RouteInfo>>
+    mutable fast_path_cache<Handler> fast_cache_;
+
+    /**
+     * @brief Optimized hash map storage for static routes with custom hash
+     *        使用自定义哈希的静态路由优化哈希表存储
+     */
+    std::unordered_map<HttpMethod, std::unordered_map<std::string, RouteInfo, optimized_path_hash>>
         static_hash_routes_by_method_;
 
     /**
@@ -251,18 +497,24 @@ private:
     std::unordered_map<HttpMethod, tsl::htrie_map<char, RouteInfo>> static_trie_routes_by_method_;
 
     /**
-     * @brief Vector storage for parameterized routes
-     *        参数化路由的向量存储
+     * @brief Hierarchical vector storage for parameterized routes by depth
+     *        按深度分层的参数化路由向量存储
      */
-    std::unordered_map<HttpMethod, std::vector<std::pair<std::string, RouteInfo>>>
-        param_routes_by_method_;
+    std::unordered_map<HttpMethod, std::unordered_map<size_t, std::vector<std::pair<std::string, RouteInfo>>>>
+        param_routes_by_depth_;
 
     /**
-     * @brief Segment count index for optimizing parameterized route matching
-     *        段数索引用于优化参数化路由匹配
+     * @brief Optimized segment index for fast parameterized route matching
+     *        优化的段索引用于快速参数化路由匹配
      */
     std::unordered_map<HttpMethod, std::unordered_map<size_t, std::vector<size_t>>>
         segment_index_by_method_;
+
+    /**
+     * @brief Object pool for RouteInfo memory optimization
+     *        RouteInfo的内存优化对象池
+     */
+    static object_pool<RouteInfo> route_info_pool_;
 
     // Performance tuning constants
     // 性能调优常量
@@ -475,6 +727,19 @@ private:
                      const RouteInfo &route_info, std::map<std::string, std::string> &params);
 
     /**
+     * @brief SIMD-optimized route matching for high performance
+     *        SIMD优化的高性能路由匹配
+     *
+     * @param path Request path / 请求路径
+     * @param pattern Route pattern / 路由模式
+     * @param route_info Route information / 路由信息
+     * @param params [OUT] Extracted parameters / [输出] 提取的参数
+     * @return bool True if match, false otherwise / 匹配返回true，否则返回false
+     */
+    bool match_route_optimized(const std::string &path, const std::string &pattern,
+                              const RouteInfo &route_info, std::map<std::string, std::string> &params);
+
+    /**
      * @brief Match a single path segment against pattern segment
      *        将单个路径段与模式段匹配
      *
@@ -506,6 +771,11 @@ private:
      */
     bool hex_to_int(char c, int &value);
 };
+
+// ========== STATIC MEMBER DEFINITIONS ==========
+
+template <CallableHandler Handler>
+object_pool<typename router<Handler>::RouteInfo> router<Handler>::route_info_pool_;
 
 // ========== GLOBAL FUNCTION DECLARATIONS ==========
 
@@ -543,25 +813,31 @@ void router<Handler>::add_route(HttpMethod method, const std::string &path, Hand
         }
     }
 
-    // Storage strategy based on route characteristics
+    // Optimized storage strategy based on route characteristics
     if (!has_params && !has_wildcard) {
-        // Static route - 暂时全部使用hash map存储
+        // Static route optimization with custom hash
         static_hash_routes_by_method_[method].emplace(
             std::move(normalized_path), RouteInfo(std::move(handler), param_names, has_wildcard));
     } else {
-        // Parameterized or wildcard route
-        auto &route_vector = param_routes_by_method_[method];
+        // Hierarchical parameterized route storage by depth
+        size_t depth = segments.size();
+        auto &depth_map = param_routes_by_depth_[method];
+        auto &route_vector = depth_map[depth];
 
-        // 性能优化：为大规模场景预分配vector容量，减少重分配
+        // Performance optimization: Pre-allocate vector capacity with exponential growth
         if (route_vector.capacity() == 0) {
-            route_vector.reserve(2000);
-        } else if (route_vector.size() >= route_vector.capacity() * 0.9) {
+            route_vector.reserve(64); // Start smaller, grow as needed
+        } else if (route_vector.size() >= route_vector.capacity() * 0.8) {
             route_vector.reserve(route_vector.capacity() * 2);
         }
 
         route_vector.emplace_back(
             std::move(normalized_path),
             RouteInfo(std::move(handler), std::move(param_names), has_wildcard));
+
+        // Build segment index for fast lookup
+        size_t route_index = route_vector.size() - 1;
+        segment_index_by_method_[method][depth].push_back(route_index);
     }
 }
 
@@ -584,37 +860,90 @@ router<Handler>::find_route(HttpMethod method, std::string_view path,
         path_without_query = std::string(path);
     }
 
+    // Remember if original path ended with slash before normalization
+    bool original_path_ended_with_slash = path_without_query.length() > 1 && 
+                                         path_without_query.back() == '/';
+    
     normalize_path(path_without_query);
 
-    // Try static routes - hash map only (trie temporarily disabled)
+    // 1. Fast path cache lookup (O(1) for common routes) - only for static routes without parameters
+    // Skip cache for routes that may have parameters to avoid incorrect results
+    bool likely_has_params = path_without_query.find(':') != std::string::npos || 
+                            path_without_query.find('*') != std::string::npos;
+    
+    if (!likely_has_params) {
+        if (auto* cached_handler = fast_cache_.lookup(method, path_without_query)) {
+            return std::ref(*cached_handler);
+        }
+
+        // 2. Thread-local cache lookup for static routes only
+        if (auto* tl_handler = thread_local_cache<Handler>::lookup(method, path_without_query)) {
+            return std::ref(*tl_handler);
+        }
+    }
+
+    // 3. Static routes with optimized hash lookup
     auto hash_method_it = static_hash_routes_by_method_.find(method);
     if (hash_method_it != static_hash_routes_by_method_.end()) {
         auto route_it = hash_method_it->second.find(path_without_query);
         if (route_it != hash_method_it->second.end()) {
-            Handler &found_handler = route_it->second.handler;
-            return std::ref(found_handler);
+            Handler* found_handler = &route_it->second.handler;
+            
+            // Cache only static routes (no parameters)
+            if (!likely_has_params) {
+                fast_cache_.store(method, path_without_query, found_handler);
+                thread_local_cache<Handler>::store(method, path_without_query, found_handler);
+            }
+            
+            return std::ref(*found_handler);
         }
     }
 
-    // Trie lookup temporarily disabled to avoid memory management issues
-    // TODO: Re-enable trie lookup after resolving htrie_map memory issues
-
-    // Try parameterized routes
-    auto param_method_it = param_routes_by_method_.find(method);
-    if (param_method_it != param_routes_by_method_.end()) {
+    // 4. Hierarchical parameterized route lookup by depth
+    auto depth_method_it = param_routes_by_depth_.find(method);
+    if (depth_method_it != param_routes_by_depth_.end()) {
         std::vector<std::string> path_segments;
         split_path_optimized(path_without_query, path_segments);
+        size_t path_depth = path_segments.size();
 
-        // Disable segment index optimization for now to avoid memory issues
-        // TODO: Re-implement segment index optimization for wildcard routes properly
-        bool found_via_index = false;
+        // Try exact depth match first
+        auto depth_it = depth_method_it->second.find(path_depth);
+        if (depth_it != depth_method_it->second.end()) {
+            for (auto &route_pair : depth_it->second) {
+                if (match_route_optimized(path_without_query, route_pair.first, route_pair.second, params)) {
+                    Handler* found_handler = &route_pair.second.handler;
+                    return std::ref(*found_handler);
+                }
+            }
+        }
 
-        // If segment index didn't help, try all parameterized routes
-        if (!found_via_index) {
-            for (auto &route_pair : param_method_it->second) {
-                if (match_route(path_without_query, route_pair.first, route_pair.second, params)) {
-                    Handler &found_handler = route_pair.second.handler;
-                    return std::ref(found_handler);
+        // Special case: try wildcard routes where original path ended with slash
+        // This handles "/static/" matching "/static/*" pattern
+        if (original_path_ended_with_slash) {
+            auto wildcard_depth_it = depth_method_it->second.find(path_depth + 1);
+            if (wildcard_depth_it != depth_method_it->second.end()) {
+                for (auto &route_pair : wildcard_depth_it->second) {
+                    if (route_pair.second.has_wildcard) {
+                        // For this special case, temporarily add empty segment to path
+                        std::string temp_path = path_without_query + "/";
+                        if (match_route_optimized(temp_path, route_pair.first, route_pair.second, params)) {
+                            Handler* found_handler = &route_pair.second.handler;
+                            return std::ref(*found_handler);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try wildcard routes (depth < path_depth)
+        for (auto &[depth, routes] : depth_method_it->second) {
+            if (depth < path_depth) {
+                for (auto &route_pair : routes) {
+                    if (route_pair.second.has_wildcard && 
+                        match_route_optimized(path_without_query, route_pair.first, route_pair.second, params)) {
+                        Handler* found_handler = &route_pair.second.handler;
+                        return std::ref(*found_handler);
+                    }
                 }
             }
         }
@@ -627,14 +956,14 @@ template <CallableHandler Handler>
 void router<Handler>::clear_all_routes()
 {
     try {
-        // 直接清理容器，让shared_ptr自动管理内存
+        // Clear all optimized storage structures
         static_hash_routes_by_method_.clear();
         static_trie_routes_by_method_.clear();
-        param_routes_by_method_.clear();
+        param_routes_by_depth_.clear();
         segment_index_by_method_.clear();
 
     } catch (...) {
-        // 忽略清理过程中的异常
+        // Ignore exceptions during cleanup
     }
 }
 
@@ -777,6 +1106,139 @@ bool router<Handler>::match_route(const std::string &path, const std::string &pa
                 // Static segment
                 if (pattern_seg != path_seg) {
                     return false;
+                }
+            }
+        }
+
+        return true;
+    }
+}
+
+template <CallableHandler Handler>
+bool router<Handler>::match_route_optimized(const std::string &path, const std::string &pattern,
+                                           const RouteInfo &route_info,
+                                           std::map<std::string, std::string> &params)
+{
+    // Fast path: exact string match for static routes
+    if (!route_info.has_wildcard && route_info.param_names.empty()) {
+        return simd_string_compare(path.c_str(), pattern.c_str(), 
+                                 std::min(path.length(), pattern.length())) && 
+               path.length() == pattern.length();
+    }
+
+    // Use the existing optimized path splitting
+    std::vector<std::string> path_segments, pattern_segments;
+    split_path_optimized(path, path_segments);
+    split_path_optimized(pattern, pattern_segments);
+    
+    // Special handling for wildcard routes: if the original path ended with '/' 
+    // and we have a wildcard pattern, we might need to add an empty segment
+    bool path_ended_with_slash = path.length() > 1 && path.back() == '/';
+    if (route_info.has_wildcard && path_ended_with_slash && 
+        path_segments.size() == pattern_segments.size() - 1) {
+        // Add an empty segment to represent the trailing slash part
+        path_segments.push_back("");
+    }
+
+    if (route_info.has_wildcard) {
+        // Optimized wildcard handling
+        // For wildcards, we need at least as many segments as pattern minus the wildcard
+        if (pattern_segments.empty() || pattern_segments.back() != "*") {
+            return false;
+        }
+
+        size_t wildcard_pos = pattern_segments.size() - 1;
+        // We need at least wildcard_pos segments to match the non-wildcard parts
+        // The wildcard can match zero or more segments
+        // Special case: if path has exactly wildcard_pos segments and the original path
+        // ended with '/', treat it as having one more empty segment for wildcard matching
+        if (path_segments.size() < wildcard_pos) {
+            return false;
+        }
+
+        // Fast segment matching with early exit
+        size_t param_index = 0;
+
+        for (size_t i = 0; i < wildcard_pos; i++) {
+            const auto &pattern_seg = pattern_segments[i];
+
+            if (i >= path_segments.size()) {
+                return false;
+            }
+
+            if (!pattern_seg.empty() && pattern_seg[0] == ':') {
+                // Parameter segment - optimized parameter extraction
+                if (param_index < route_info.param_names.size()) {
+                    std::string param_value = path_segments[i];
+                    url_decode_safe(param_value);
+                    params[route_info.param_names[param_index++]] = std::move(param_value);
+                }
+            } else {
+                // Static segment - use SIMD comparison for longer segments
+                if (pattern_seg.length() > 16) {
+                    if (!simd_string_compare(pattern_seg.c_str(), path_segments[i].c_str(), 
+                                           std::min(pattern_seg.length(), path_segments[i].length())) ||
+                        pattern_seg.length() != path_segments[i].length()) {
+                        return false;
+                    }
+                } else {
+                    if (pattern_seg != path_segments[i]) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        // Collect wildcard value with pre-allocated string
+        std::string wildcard_value;
+        size_t estimated_size = 0;
+        for (size_t j = wildcard_pos; j < path_segments.size(); j++) {
+            estimated_size += path_segments[j].length() + 1; // +1 for '/'
+        }
+        wildcard_value.reserve(estimated_size);
+
+        for (size_t j = wildcard_pos; j < path_segments.size(); j++) {
+            if (!wildcard_value.empty()) {
+                wildcard_value += "/";
+            }
+            std::string decoded_segment = path_segments[j];
+            url_decode_safe(decoded_segment);
+            wildcard_value += decoded_segment;
+        }
+        params["*"] = std::move(wildcard_value);
+        return true;
+    } else {
+        // Optimized parameterized route matching
+        if (path_segments.size() != pattern_segments.size()) {
+            return false;
+        }
+
+        size_t param_index = 0;
+        for (size_t i = 0; i < pattern_segments.size(); i++) {
+            const auto &pattern_seg = pattern_segments[i];
+            const auto &path_seg = path_segments[i];
+
+            if (pattern_seg == "*") {
+                return false; // Invalid pattern
+            } else if (!pattern_seg.empty() && pattern_seg[0] == ':') {
+                // Parameter segment
+                if (param_index < route_info.param_names.size()) {
+                    std::string param_value = path_seg;
+                    url_decode_safe(param_value);
+                    params[route_info.param_names[param_index++]] = std::move(param_value);
+                }
+            } else {
+                // Static segment with SIMD optimization
+                if (pattern_seg.length() > 16) {
+                    if (!simd_string_compare(pattern_seg.c_str(), path_seg.c_str(), 
+                                           std::min(pattern_seg.length(), path_seg.length())) ||
+                        pattern_seg.length() != path_seg.length()) {
+                        return false;
+                    }
+                } else {
+                    if (pattern_seg != path_seg) {
+                        return false;
+                    }
                 }
             }
         }

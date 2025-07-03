@@ -32,17 +32,23 @@ set(TEST_TARGETS
 
 # Add a single test executable with all test sources
 add_executable(http_router_tests
-    tests/http_router_test.cpp
-    tests/http_router_performance_test.cpp
-    tests/http_router_hybrid_test.cpp
-    tests/http_router_adv_test.cpp
-    tests/http_router_stress_test.cpp
-    tests/test_router_group.cpp
-    tests/test_router.cpp
-    tests/router_optimization_integration_test.cpp
-    tests/router_optimization_test.cpp
-    tests/simple_test.cpp
-    tests/router_simple_test.cpp
+    tests/http_router_test.cpp #1
+    tests/http_router_performance_test.cpp #2
+    tests/http_router_hybrid_test.cpp #3
+    tests/http_router_adv_test.cpp #4
+    tests/http_router_stress_test.cpp #5
+
+    tests/router_optimization_integration_test.cpp #6
+    tests/router_optimization_test.cpp #7
+    
+    tests/router_simple_test.cpp #8
+    tests/simple_test.cpp #9
+    tests/lambda_context_test.cpp #10
+
+    tests/test_router_group.cpp #11
+    tests/test_router.cpp #12
+    tests/massive_lambda_performance_test.cpp #13
+    tests/massive_lambda_performance_test_fixed.cpp #14
 )
 
 target_link_directories(${TEST_TARGETS}

@@ -365,7 +365,7 @@ TEST_F(RouterOptimizationTest, HexToIntSafe_Performance)
 /**
  * @brief 测试优化功能的集成效果 - Test integration effect of optimization features
  */
-TEST_F(RouterOptimizationTest, DISABLED_Integration_FullRouterOptimization)
+TEST_F(RouterOptimizationTest, Integration_FullRouterOptimization)
 {
     // 添加各种类型的路由 - Add various types of routes
     router_->add_route(HttpMethod::GET, "/api/static", TestHandler{1});
@@ -911,4 +911,302 @@ TEST_F(RouterOptimizationTest, LargeScalePerformance)
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 
     EXPECT_LT(duration.count(), 10000000); // 10秒内完成
+}
+
+// ============================================================================
+// Lambda表达式增强测试 - Enhanced Lambda Expression Tests
+// ============================================================================
+
+/**
+ * @brief 测试各种类型的Lambda表达式 - Test various types of lambda expressions
+ */
+TEST_F(RouterOptimizationTest, LambdaExpressionVarieties)
+{
+    // 测试无捕获lambda
+    {
+        auto no_capture_lambda = []() {
+            // 无捕获的简单lambda
+        };
+        
+        router<decltype(no_capture_lambda)> lambda_router;
+        lambda_router.add_route(HttpMethod::GET, "/lambda/simple", std::move(no_capture_lambda));
+        
+        auto result = lambda_router.find_route(HttpMethod::GET, "/lambda/simple", params_, query_params_);
+        EXPECT_TRUE(result.has_value());
+        
+        if (result.has_value()) {
+            result->get()(); // 执行lambda
+        }
+    }
+    
+    // 测试值捕获lambda
+    {
+        int captured_value = 42;
+        auto value_capture_lambda = [captured_value]() {
+            return captured_value;
+        };
+        
+        router<decltype(value_capture_lambda)> value_router;
+        value_router.add_route(HttpMethod::GET, "/lambda/value", std::move(value_capture_lambda));
+        
+        auto result = value_router.find_route(HttpMethod::GET, "/lambda/value", params_, query_params_);
+        EXPECT_TRUE(result.has_value());
+        
+        if (result.has_value()) {
+            int returned_value = result->get()();
+            EXPECT_EQ(returned_value, 42);
+        }
+    }
+    
+    // 测试引用捕获lambda（需要小心生命周期）
+    {
+        int counter = 0;
+        auto ref_capture_lambda = [&counter]() {
+            return ++counter;
+        };
+        
+        router<decltype(ref_capture_lambda)> ref_router;
+        ref_router.add_route(HttpMethod::GET, "/lambda/ref", std::move(ref_capture_lambda));
+        
+        // 执行多次来测试引用捕获
+        for (int i = 1; i <= 3; ++i) {
+            auto result = ref_router.find_route(HttpMethod::GET, "/lambda/ref", params_, query_params_);
+            EXPECT_TRUE(result.has_value());
+            
+            if (result.has_value()) {
+                int count = result->get()();
+                EXPECT_EQ(count, i);
+            }
+        }
+        
+        EXPECT_EQ(counter, 3);
+    }
+}
+
+/**
+ * @brief 测试Lambda表达式性能 - Test lambda expression performance
+ */
+TEST_F(RouterOptimizationTest, LambdaPerformanceComparison)
+{
+    const int num_routes = 1000;
+    const int iterations = 10000;
+    
+    // 测试简单lambda性能
+    {
+        std::vector<std::unique_ptr<router<std::function<void()>>>> lambda_routers;
+        
+        // 创建lambda路由器
+        for (int i = 0; i < num_routes; ++i) {
+            auto lambda_router = std::make_unique<router<std::function<void()>>>();
+            
+            std::function<void()> lambda_handler = [i]() {
+                // 简单的lambda处理逻辑
+                volatile int dummy = i * 2; // 防止编译器优化
+                (void)dummy;
+            };
+            
+            lambda_router->add_route(HttpMethod::GET, "/lambda/" + std::to_string(i), std::move(lambda_handler));
+            lambda_routers.push_back(std::move(lambda_router));
+        }
+        
+        // 性能测试
+        auto start = std::chrono::high_resolution_clock::now();
+        
+        for (int i = 0; i < iterations; ++i) {
+            int route_id = i % num_routes;
+            auto& router = *lambda_routers[route_id];
+            
+            auto result = router.find_route(HttpMethod::GET, "/lambda/" + std::to_string(route_id), params_, query_params_);
+            if (result.has_value()) {
+                result->get()();
+            }
+        }
+        
+        auto end = std::chrono::high_resolution_clock::now();
+        auto lambda_duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        
+        double avg_lambda_time = lambda_duration.count() / static_cast<double>(iterations);
+        std::cout << "Lambda handler performance: " << avg_lambda_time << " μs per operation" << std::endl;
+        
+        // Lambda性能应该合理
+        EXPECT_LT(avg_lambda_time, 100.0);
+    }
+    
+    // 对比测试：TestHandler性能
+    {
+        // 创建常规handler路由器
+        for (int i = 0; i < num_routes; ++i) {
+            router_->add_route(HttpMethod::GET, "/regular/" + std::to_string(i), TestHandler{i});
+        }
+        
+        // 性能测试
+        auto start = std::chrono::high_resolution_clock::now();
+        
+        for (int i = 0; i < iterations; ++i) {
+            int route_id = i % num_routes;
+            
+            auto result = router_->find_route(HttpMethod::GET, "/regular/" + std::to_string(route_id), params_, query_params_);
+            if (result.has_value()) {
+                result->get()();
+            }
+        }
+        
+        auto end = std::chrono::high_resolution_clock::now();
+        auto regular_duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        
+        double avg_regular_time = regular_duration.count() / static_cast<double>(iterations);
+        std::cout << "Regular handler performance: " << avg_regular_time << " μs per operation" << std::endl;
+        
+        // 常规handler性能应该合理
+        EXPECT_LT(avg_regular_time, 100.0);
+    }
+}
+
+/**
+ * @brief 测试复杂Lambda表达式 - Test complex lambda expressions
+ */
+TEST_F(RouterOptimizationTest, ComplexLambdaExpressions)
+{
+    // 测试带有复杂逻辑的lambda
+    {
+        std::map<std::string, int> data_store;
+        
+        auto complex_lambda = [&data_store](/* 实际应用中可能需要参数 */) {
+            // 模拟复杂的业务逻辑
+            data_store["request_count"] = data_store["request_count"] + 1;
+            data_store["last_access"] = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+            
+            // 模拟一些计算
+            int sum = 0;
+            for (int i = 0; i < 100; ++i) {
+                sum += i;
+            }
+            data_store["computed_sum"] = sum;
+        };
+        
+        router<decltype(complex_lambda)> complex_router;
+        complex_router.add_route(HttpMethod::POST, "/api/complex", std::move(complex_lambda));
+        
+        // 执行复杂lambda
+        auto result = complex_router.find_route(HttpMethod::POST, "/api/complex", params_, query_params_);
+        EXPECT_TRUE(result.has_value());
+        
+        if (result.has_value()) {
+            result->get()();
+            
+            // 验证lambda的副作用
+            EXPECT_EQ(data_store["request_count"], 1);
+            EXPECT_GT(data_store["last_access"], 0);
+            EXPECT_EQ(data_store["computed_sum"], 4950); // 0+1+...+99 = 4950
+        }
+    }
+}
+
+/**
+ * @brief 测试Lambda表达式的内存管理 - Test lambda expression memory management
+ */
+TEST_F(RouterOptimizationTest, LambdaMemoryManagement)
+{
+    // 测试大对象捕获的内存管理
+    {
+        // 创建一个包含大量数据的lambda
+        std::vector<std::string> large_data(1000, std::string(1000, 'A'));
+        
+        auto memory_intensive_lambda = [large_data]() {
+            // 使用捕获的大数据
+            return large_data.size();
+        };
+        
+        router<decltype(memory_intensive_lambda)> memory_router;
+        memory_router.add_route(HttpMethod::GET, "/memory/large", std::move(memory_intensive_lambda));
+        
+        // 执行lambda
+        auto result = memory_router.find_route(HttpMethod::GET, "/memory/large", params_, query_params_);
+        EXPECT_TRUE(result.has_value());
+        
+        if (result.has_value()) {
+            size_t size = result->get()();
+            EXPECT_EQ(size, 1000);
+        }
+    }
+    
+    // 测试智能指针捕获
+    {
+        auto shared_data = std::make_shared<std::vector<int>>(100, 42);
+        
+        auto smart_ptr_lambda = [shared_data]() {
+            return shared_data->size();
+        };
+        
+        router<decltype(smart_ptr_lambda)> smart_ptr_router;
+        smart_ptr_router.add_route(HttpMethod::GET, "/memory/smart", std::move(smart_ptr_lambda));
+        
+        // 执行lambda
+        auto result = smart_ptr_router.find_route(HttpMethod::GET, "/memory/smart", params_, query_params_);
+        EXPECT_TRUE(result.has_value());
+        
+        if (result.has_value()) {
+            size_t size = result->get()();
+            EXPECT_EQ(size, 100);
+        }
+        
+        // shared_data应该仍然有效（被lambda捕获）
+        EXPECT_EQ(shared_data.use_count(), 2); // 一个在lambda中，一个在这里
+    }
+}
+
+/**
+ * @brief 测试Lambda表达式线程安全性 - Test lambda expression thread safety
+ */
+TEST_F(RouterOptimizationTest, LambdaThreadSafety)
+{
+    // 创建线程安全的lambda
+    std::atomic<int> atomic_counter{0};
+    
+    auto thread_safe_lambda = [&atomic_counter]() {
+        return ++atomic_counter;
+    };
+    
+    router<decltype(thread_safe_lambda)> thread_safe_router;
+    thread_safe_router.add_route(HttpMethod::GET, "/thread/safe", std::move(thread_safe_lambda));
+    
+    // 并发测试
+    const int num_threads = 4;
+    const int operations_per_thread = 25;
+    std::vector<std::thread> threads;
+    std::vector<int> results(num_threads * operations_per_thread);
+    std::atomic<int> result_index{0};
+    
+    for (int t = 0; t < num_threads; ++t) {
+        threads.emplace_back([&thread_safe_router, &results, &result_index, operations_per_thread]() {
+            for (int i = 0; i < operations_per_thread; ++i) {
+                std::map<std::string, std::string> local_params, local_query_params;
+                auto result = thread_safe_router.find_route(HttpMethod::GET, "/thread/safe", local_params, local_query_params);
+                
+                if (result.has_value()) {
+                    int count = result->get()();
+                    int idx = result_index.fetch_add(1);
+                    if (idx < static_cast<int>(results.size())) {
+                        results[idx] = count;
+                    }
+                }
+            }
+        });
+    }
+    
+    // 等待所有线程完成
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    
+    // 验证结果
+    EXPECT_EQ(atomic_counter.load(), num_threads * operations_per_thread);
+    EXPECT_EQ(result_index.load(), num_threads * operations_per_thread);
+    
+    // 验证所有返回值都是唯一的（原子操作保证）
+    std::sort(results.begin(), results.end());
+    for (int i = 0; i < static_cast<int>(results.size()); ++i) {
+        EXPECT_EQ(results[i], i + 1);
+    }
 }
