@@ -23,7 +23,7 @@
 #include <string>
 #include <vector>
 
-using namespace flc;
+using namespace co;
 
 // Advanced handler types
 class AdvancedHandler

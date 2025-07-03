@@ -21,7 +21,7 @@
 #include <unordered_map>
 #include <vector>
 
-using namespace flc;
+using namespace co;
 
 class DummyHandler
 {

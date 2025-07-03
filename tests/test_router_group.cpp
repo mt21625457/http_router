@@ -25,7 +25,7 @@
 #include "../include/router/router_group.hpp"
 #include "../include/router/router_impl.hpp"
 
-using namespace flc;
+using namespace co;
 
 // Simple handler for testing
 class TestHandler

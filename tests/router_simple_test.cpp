@@ -12,7 +12,7 @@
 
 #include "router/router.hpp"
 
-using namespace flc;
+using namespace co;
 
 /**
  * @brief 测试用的仿函数处理器类
@@ -33,8 +33,9 @@ public:
 class SimpleRouterTest : public ::testing::Test
 {
 protected:
-    void SetUp() override { 
-        router_.reset(new router<SimpleHandler>()); 
+    void SetUp() override
+    {
+        router_.reset(new router<SimpleHandler>());
         params_.clear();
         query_params_.clear();
     }
@@ -154,10 +155,10 @@ TEST_F(SimpleRouterTest, LambdaExpressionSupport)
 
         router<decltype(simple_lambda)> lambda_router;
         lambda_router.add_route(HttpMethod::GET, "/lambda/simple", std::move(simple_lambda));
-        
+
         std::map<std::string, std::string> local_params, local_query_params;
-        auto result =
-            lambda_router.find_route(HttpMethod::GET, "/lambda/simple", local_params, local_query_params);
+        auto result = lambda_router.find_route(HttpMethod::GET, "/lambda/simple", local_params,
+                                               local_query_params);
         EXPECT_TRUE(result.has_value());
         if (result.has_value()) {
             result->get()(); // 调用lambda
@@ -173,8 +174,8 @@ TEST_F(SimpleRouterTest, LambdaExpressionSupport)
                                  std::move(lambda_with_capture));
 
         std::map<std::string, std::string> local_params, local_query_params;
-        auto result =
-            capture_router.find_route(HttpMethod::GET, "/lambda/capture", local_params, local_query_params);
+        auto result = capture_router.find_route(HttpMethod::GET, "/lambda/capture", local_params,
+                                                local_query_params);
         EXPECT_TRUE(result.has_value());
 
         if (result.has_value()) {

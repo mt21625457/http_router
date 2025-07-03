@@ -22,7 +22,7 @@
 #include <thread>
 #include <vector>
 
-using namespace flc;
+using namespace co;
 
 class DummyHandler
 {

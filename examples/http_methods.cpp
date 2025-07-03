@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-using namespace flc;
+using namespace co;
 
 // Handler that knows about HTTP methods
 class RestApiHandler

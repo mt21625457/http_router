@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 
-using namespace flc;
+using namespace co;
 
 class DummyHandler
 {

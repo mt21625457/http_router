@@ -48,7 +48,7 @@ HTTP Router 是一个仅头文件的C++库，专为快速URL路径匹配而设�
 #include <iostream>
 #include <functional>
 
-using namespace flc;
+using namespace co;
 
 // 定义一个简单的处理程序类型
 using RouteHandler = std::function<void(const std::map<std::string, std::string>&)>;
@@ -111,7 +111,7 @@ int main() {
 #include "router/router.hpp"
 #include <iostream>
 
-using namespace flc;
+using namespace co;
 
 // 自定义处理程序类
 class RequestHandler {
@@ -171,7 +171,7 @@ int main() {
 #include "router/router.hpp"
 #include <iostream>
 
-using namespace flc;
+using namespace co;
 
 int main() {
     // 使用Lambda处理器的路由器
@@ -225,7 +225,7 @@ int main() {
 #include "router/router.hpp"
 #include <iostream>
 
-using namespace flc;
+using namespace co;
 
 int main() {
     router<std::function<void()>> router_;

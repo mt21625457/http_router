@@ -26,7 +26,7 @@
 #include <router/router_group.hpp>
 #include <router/router_impl.hpp>
 
-using namespace flc;
+using namespace co;
 
 // Mock handler for testing
 class MockHandler

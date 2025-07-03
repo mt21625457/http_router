@@ -41,7 +41,7 @@
 #include <string_view>   // for std::string_view
 #include <unordered_map> // for cache storage
 
-namespace flc {
+namespace co {
 
 /**
  * @brief 优化版路径解析函数 - Optimized path parsing function
@@ -257,7 +257,7 @@ inline void url_decode_safe(std::string &str)
     str = result; // 移动语义避免拷贝 - Move semantics to avoid copying
 }
 
-} // namespace flc
+} // namespace co
 
 /**
  * @section usage_examples 使用示例 Usage Examples
@@ -265,7 +265,7 @@ inline void url_decode_safe(std::string &str)
  * @subsection basic_optimization 基础优化使用 Basic Optimization Usage
  * ```cpp
  * #include "router_optimized.hpp"
- * using namespace flc;
+ * using namespace co;
  *
  * // 使用优化的路径解析
  * // Use optimized path parsing

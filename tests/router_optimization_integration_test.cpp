@@ -28,7 +28,7 @@
 
 #include "router/router.hpp"
 
-using namespace flc;
+using namespace co;
 
 /**
  * @brief 测试用的简单处理器类 - Simple handler class for testing
@@ -38,14 +38,14 @@ class TestHandler
 public:
     TestHandler() = default;
     explicit TestHandler(int id) : id_(id) {}
-    
+
     void operator()()
     {
         // 空实现
     }
-    
+
     int id() const { return id_; }
-    
+
 private:
     int id_ = 0;
 };

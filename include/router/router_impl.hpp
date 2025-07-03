@@ -37,7 +37,7 @@
 #include "router.hpp"
 #include "router_group.hpp"
 
-namespace flc {
+namespace co {
 
 /**
  * @brief Implementation of router group creation method
@@ -89,9 +89,9 @@ namespace flc {
  *      参见router_group::create_group()了解底层工厂方法
  */
 template <CallableHandler Handler>
-std::shared_ptr<router_group<Handler>>
-router<Handler>::group(std::string_view prefix) {
-  return router_group<Handler>::create_group(*this, prefix);
+std::shared_ptr<router_group<Handler>> router<Handler>::group(std::string_view prefix)
+{
+    return router_group<Handler>::create_group(*this, prefix);
 }
 
-} // namespace flc
+} // namespace co

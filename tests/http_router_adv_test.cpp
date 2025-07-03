@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-using namespace flc;
+using namespace co;
 
 // Handler for testing purposes
 class DummyHandler

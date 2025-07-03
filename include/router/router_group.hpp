@@ -21,7 +21,7 @@
 
 #include "router.hpp"
 
-namespace flc {
+namespace co {
 
 // Forward declaration
 // 前向声明
@@ -729,4 +729,4 @@ create_cors(const std::vector<std::string> &allowed_origins = {"*"})
 
 } // namespace middleware
 
-} // namespace flc
+} // namespace co
