@@ -30,8 +30,15 @@ set(TEST_TARGETS
     http_router_tests
 )
 
-# Add a single test executable with all test sources
-add_executable(http_router_tests
+# 定义示例文件列表
+set(EXAMPLES
+    advanced_routing
+    basic_usage
+    http_methods
+    performance_benchmark
+)
+
+set(http_router_test_src 
     tests/http_router_test.cpp #1
     tests/http_router_performance_test.cpp #2
     tests/http_router_hybrid_test.cpp #3
@@ -40,7 +47,7 @@ add_executable(http_router_tests
 
     tests/router_optimization_integration_test.cpp #6
     tests/router_optimization_test.cpp #7
-    
+
     tests/router_simple_test.cpp #8
     tests/simple_test.cpp #9
     tests/lambda_context_test.cpp #10
@@ -51,10 +58,14 @@ add_executable(http_router_tests
     tests/massive_lambda_performance_test_fixed.cpp #14
 )
 
+# Add a single test executable with all test sources
+add_executable(http_router_tests
+    ${http_router_test_src}
+)
+
 target_link_directories(${TEST_TARGETS}
     PUBLIC ${LIBBASE_PATH}/lib/x86_64-linux-gnu
 )
-
 
 # Link test executables with GTest
 target_link_libraries(${TEST_TARGETS}
@@ -63,10 +74,25 @@ target_link_libraries(${TEST_TARGETS}
         GTest::gtest_main
         pthread
         rt
-    PUBLIC c++ c++abi 
-        
+    PUBLIC c++ c++abi      
 )
 
+# 使用循环创建示例可执行文件
+foreach(example ${EXAMPLES})
+    add_executable(${example}
+        ${CMAKE_CURRENT_SOURCE_DIR}/examples/${example}.cpp
+    )
+    
+    # 为每个示例设置链接目录和库
+    target_link_directories(${example}
+        PUBLIC ${LIBBASE_PATH}/lib/x86_64-linux-gnu
+    )
+    
+    target_link_libraries(${example}
+        PUBLIC pthread rt
+        PUBLIC c++ c++abi      
+    )
+endforeach()
 
 
 
