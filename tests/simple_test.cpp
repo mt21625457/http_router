@@ -21,7 +21,7 @@ public:
     void handle() const {}
 };
 
-class SimpleRouterTest : public ::testing::Test
+class BasicRouterTest : public ::testing::Test
 {
 protected:
     std::unique_ptr<router<TestHandler>> router_;
@@ -40,7 +40,7 @@ protected:
     }
 };
 
-TEST_F(SimpleRouterTest, BasicFunctionality)
+TEST_F(BasicRouterTest, BasicFunctionality)
 {
     std::vector<std::string> segments;
 
@@ -61,7 +61,7 @@ TEST_F(SimpleRouterTest, BasicFunctionality)
     EXPECT_EQ(value, 10);
 }
 
-TEST_F(SimpleRouterTest, CacheKeyBuilder)
+TEST_F(BasicRouterTest, CacheKeyBuilder)
 {
     // 删除这个测试，因为缓存功能已经被移除
 }
