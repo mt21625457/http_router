@@ -13,11 +13,14 @@
 
 #include <algorithm> // Required for std::transform and std::count
 #include <chrono>
+#include <concepts>
+#include <functional>
 #include <list>
 #include <map>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -25,9 +28,32 @@
 
 namespace flc {
 
+/**
+ * @brief Concept to ensure Handler is a callable functor (supports lambda expressions)
+ *        确保Handler是可调用仿函数的概念约束（支持lambda表达式）
+ *
+ * Handler must be:
+ * - Move constructible and assignable (for efficient storage)
+ * - Callable with no arguments (functor interface)
+ * - Can be lambda expressions, function objects, or function pointers
+ *
+ * Handler必须：
+ * - 移动可构造和可赋值（用于高效存储）
+ * - 无参数可调用（仿函数接口）
+ * - 可以是lambda表达式、函数对象或函数指针
+ */
+template <typename T>
+concept CallableHandler = requires(T t) {
+    // Must be move constructible
+    T{std::move(t)};
+
+    // Must be callable with no arguments (functor interface)
+    t();
+} && std::move_constructible<T> && std::invocable<T>;
+
 // Forward declaration for router_group
 // router_group类的前向声明
-template <typename Handler>
+template <CallableHandler Handler>
 class router_group;
 
 /**
@@ -133,8 +159,10 @@ inline HttpMethod from_string(std::string_view s)
  * @brief High-performance HTTP router with advanced features
  *        高性能HTTP路由器，具有高级功能
  *
- * @tparam Handler The type of handler function used for route callbacks
- *                 用于路由回调的处理器函数类型
+ * @tparam Handler The type of handler functor used for route callbacks
+ *                 用于路由回调的处理器仿函数类型
+ *                 Must satisfy CallableHandler concept (movable, default constructible, callable)
+ *                 必须满足CallableHandler概念（可移动、默认可构造、可调用）
  *
  * Features / 功能特性:
  * - Thread-safe routing with thread-local caching / 线程安全路由与线程本地缓存
@@ -145,28 +173,17 @@ inline HttpMethod from_string(std::string_view s)
  * - LRU cache for frequently accessed routes / LRU缓存用于频繁访问的路由
  * - Query parameter parsing with URL decoding / 查询参数解析与URL解码
  * - Router groups for organizing routes / 路由组用于组织路由
+ * - Type-safe handler constraints with C++20 concepts / 使用C++20概念的类型安全处理器约束
  *
  * @example
  * ```cpp
- * // Create a router
- * router<MyHandler> r;
+ * // Define a handler functor
+ * class MyHandler {
+ * public:
  *
- * // Add routes
- * r.add_route(HttpMethod::GET, "/users/:id", handler);
- * r.add_route(HttpMethod::POST, "/users", create_handler);
- * r.add_route(HttpMethod::GET, "/static/\\*", static_handler); // Wildcard route
- *
- * // Find and execute route
- * std::shared_ptr<MyHandler> handler;
- * std::map<std::string, std::string> params, query_params;
- * if (r.find_route(HttpMethod::GET, "/users/123?name=john", handler, params,
- * query_params) == 0) {
- *     // Route found, params["id"] == "123", query_params["name"] == "john"
- *     handler->handle();
- * }
- * ```
- */
-template <typename Handler>
+ **/
+
+template <CallableHandler Handler>
 class router
 {
 
@@ -177,16 +194,16 @@ private:
      */
     struct RouteInfo
     {
-        std::unique_ptr<Handler> handler;     ///< Route handler / 路由处理器
+        Handler handler;                      ///< Route handler / 路由处理器
         std::vector<std::string> param_names; ///< Parameter names for parameterized
                                               ///< routes / 参数化路由的参数名
         bool has_wildcard;                    ///< Whether route has wildcard / 路由是否包含通配符
 
-        // 默认构造函数 - Default constructor
-        RouteInfo() : has_wildcard(false) {}
+        // 删除默认构造函数 - Delete default constructor (Handler may not be default constructible)
+        RouteInfo() = delete;
 
         // 显式构造函数 - Explicit constructor
-        RouteInfo(std::unique_ptr<Handler> h, std::vector<std::string> names, bool wildcard)
+        RouteInfo(Handler h, std::vector<std::string> names, bool wildcard)
             : handler(std::move(h)), param_names(std::move(names)), has_wildcard(wildcard)
         {
         }
@@ -205,17 +222,9 @@ private:
             other.has_wildcard = false;
         }
 
-        // 移动赋值操作符 - Move assignment operator
-        RouteInfo &operator=(RouteInfo &&other) noexcept
-        {
-            if (this != &other) {
-                handler = std::move(other.handler);
-                param_names = std::move(other.param_names);
-                has_wildcard = other.has_wildcard;
-                other.has_wildcard = false;
-            }
-            return *this;
-        }
+        // 删除移动赋值操作符 - Delete move assignment operator (Handler may not support move
+        // assignment)
+        RouteInfo &operator=(RouteInfo &&other) = delete;
 
         // 析构函数 - Destructor
         ~RouteInfo() = default; // unique_ptr自动处理内存管理
@@ -439,7 +448,7 @@ public:
      * r.add_route(HttpMethod::GET, "/static/\\*", static_file_handler);
      * ```
      */
-    void add_route(HttpMethod method, const std::string &path, std::unique_ptr<Handler> &&handler);
+    void add_route(HttpMethod method, const std::string &path, Handler &&handler);
 
     /**
      * @brief Find route by matching path and extract parameters
@@ -473,9 +482,9 @@ public:
      * }
      * ```
      */
-    Handler *find_route(HttpMethod method, std::string_view path,
-                        std::map<std::string, std::string> &params,
-                        std::map<std::string, std::string> &query_params);
+    std::optional<std::reference_wrapper<Handler>>
+    find_route(HttpMethod method, std::string_view path, std::map<std::string, std::string> &params,
+               std::map<std::string, std::string> &query_params);
 
     /**
      * @brief Clear thread-local route cache
@@ -611,8 +620,9 @@ private:
      * @param params [OUT] Cached parameters if found / [输出] 找到的缓存参数
      * @return Handler* Cached handler if found, nullptr otherwise / 找到的缓存处理器，否则为nullptr
      */
-    Handler *check_route_cache(HttpMethod method, const std::string &path,
-                               std::map<std::string, std::string> &params) const;
+    std::optional<std::reference_wrapper<Handler>>
+    check_route_cache(HttpMethod method, const std::string &path,
+                      std::map<std::string, std::string> &params) const;
 
     /**
      * @brief Cache route lookup result in thread-local cache
@@ -694,9 +704,8 @@ private:
 
 // ========== TEMPLATE METHOD IMPLEMENTATIONS ==========
 
-template <typename Handler>
-void router<Handler>::add_route(HttpMethod method, const std::string &path,
-                                std::unique_ptr<Handler> &&handler)
+template <CallableHandler Handler>
+void router<Handler>::add_route(HttpMethod method, const std::string &path, Handler &&handler)
 {
     std::string normalized_path = path;
     normalize_path(normalized_path);
@@ -770,10 +779,11 @@ void router<Handler>::add_route(HttpMethod method, const std::string &path,
     }
 }
 
-template <typename Handler>
-Handler *router<Handler>::find_route(HttpMethod method, std::string_view path,
-                                     std::map<std::string, std::string> &params,
-                                     std::map<std::string, std::string> &query_params)
+template <CallableHandler Handler>
+std::optional<std::reference_wrapper<Handler>>
+router<Handler>::find_route(HttpMethod method, std::string_view path,
+                            std::map<std::string, std::string> &params,
+                            std::map<std::string, std::string> &query_params)
 {
     params.clear();
     query_params.clear();
@@ -793,7 +803,7 @@ Handler *router<Handler>::find_route(HttpMethod method, std::string_view path,
     // Check cache first
     if (ENABLE_CACHE) {
         auto cached_handler = check_route_cache(method, path_without_query, params);
-        if (cached_handler) {
+        if (cached_handler.has_value()) {
             return cached_handler;
         }
     }
@@ -803,11 +813,11 @@ Handler *router<Handler>::find_route(HttpMethod method, std::string_view path,
     if (hash_method_it != static_hash_routes_by_method_.end()) {
         auto route_it = hash_method_it->second.find(path_without_query);
         if (route_it != hash_method_it->second.end()) {
-            Handler *found_handler = route_it->second.handler.get();
+            Handler &found_handler = route_it->second.handler;
             if (ENABLE_CACHE) {
-                cache_route(method, path_without_query, *found_handler, params);
+                cache_route(method, path_without_query, found_handler, params);
             }
-            return found_handler;
+            return std::ref(found_handler);
         }
     }
 
@@ -826,22 +836,22 @@ Handler *router<Handler>::find_route(HttpMethod method, std::string_view path,
 
         // If segment index didn't help, try all parameterized routes
         if (!found_via_index) {
-            for (const auto &route_pair : param_method_it->second) {
+            for (auto &route_pair : param_method_it->second) {
                 if (match_route(path_without_query, route_pair.first, route_pair.second, params)) {
-                    Handler *found_handler = route_pair.second.handler.get();
+                    Handler &found_handler = route_pair.second.handler;
                     if (ENABLE_CACHE) {
-                        cache_route(method, path_without_query, *found_handler, params);
+                        cache_route(method, path_without_query, found_handler, params);
                     }
-                    return found_handler;
+                    return std::ref(found_handler);
                 }
             }
         }
     }
 
-    return nullptr; // Route not found
+    return std::nullopt; // Route not found
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 void router<Handler>::clear_cache()
 {
     try {
@@ -865,7 +875,7 @@ void router<Handler>::clear_cache()
     }
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 void router<Handler>::clear_all_routes()
 {
     try {
@@ -892,7 +902,7 @@ void router<Handler>::clear_all_routes()
     }
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 void router<Handler>::normalize_path(std::string &path)
 {
     if (path.empty()) {
@@ -930,7 +940,7 @@ void router<Handler>::normalize_path(std::string &path)
     path = result;
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 std::string router<Handler>::generate_cache_key(HttpMethod method, const std::string &path) const
 {
     // 使用线程本地缓存键构建器以提高性能 - Use thread-local cache key builder for better
@@ -939,9 +949,10 @@ std::string router<Handler>::generate_cache_key(HttpMethod method, const std::st
     return builder.build(method, path);
 }
 
-template <typename Handler>
-Handler *router<Handler>::check_route_cache(HttpMethod method, const std::string &path,
-                                            std::map<std::string, std::string> &params) const
+template <CallableHandler Handler>
+std::optional<std::reference_wrapper<Handler>>
+router<Handler>::check_route_cache(HttpMethod method, const std::string &path,
+                                   std::map<std::string, std::string> &params) const
 {
     auto &cache = get_thread_local_cache();
     auto &lru_list = get_thread_local_lru_list();
@@ -954,13 +965,13 @@ Handler *router<Handler>::check_route_cache(HttpMethod method, const std::string
         lru_list.splice(lru_list.begin(), lru_list, it->second.lru_it);
 
         params = it->second.params;
-        return &it->second.handler.value().get();
+        return it->second.handler;
     }
 
-    return nullptr;
+    return std::nullopt;
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 void router<Handler>::cache_route(HttpMethod method, const std::string &path, Handler &handler,
                                   const std::map<std::string, std::string> &params) const
 {
@@ -993,7 +1004,7 @@ void router<Handler>::cache_route(HttpMethod method, const std::string &path, Ha
     prune_cache();
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 void router<Handler>::prune_cache() const
 {
     auto &cache = get_thread_local_cache();
@@ -1006,7 +1017,7 @@ void router<Handler>::prune_cache() const
     }
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 size_t router<Handler>::count_segments(const std::string &path) const
 {
     if (path.empty() || path == "/") {
@@ -1023,7 +1034,7 @@ size_t router<Handler>::count_segments(const std::string &path) const
     return count;
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 bool router<Handler>::match_route(const std::string &path, const std::string &pattern,
                                   const RouteInfo &route_info,
                                   std::map<std::string, std::string> &params)
@@ -1115,7 +1126,7 @@ bool router<Handler>::match_route(const std::string &path, const std::string &pa
     }
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 bool router<Handler>::match_segment(const std::string &path_segment,
                                     const std::string &pattern_segment,
                                     std::map<std::string, std::string> &params)
@@ -1135,7 +1146,7 @@ bool router<Handler>::match_segment(const std::string &path_segment,
     }
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 void router<Handler>::split_path_optimized(std::string_view path,
                                            std::vector<std::string> &segments)
 {
@@ -1189,14 +1200,14 @@ void router<Handler>::split_path_optimized(std::string_view path,
     }
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 void router<Handler>::split_path(const std::string &path, std::vector<std::string> &segments)
 {
     // 使用优化版本进行实现 - Use optimized version for implementation
     split_path_optimized(path, segments);
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 void router<Handler>::parse_query_params(std::string_view query,
                                          std::map<std::string, std::string> &params)
 {
@@ -1226,7 +1237,7 @@ void router<Handler>::parse_query_params(std::string_view query,
     }
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 void router<Handler>::url_decode_safe(std::string &str)
 {
     // 空字符串快速返回，避免不必要的处理
@@ -1289,14 +1300,14 @@ void router<Handler>::url_decode_safe(std::string &str)
     str.swap(result); // 使用swap避免潜在的移动问题 - Use swap to avoid potential move issues
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 void router<Handler>::url_decode(std::string &str)
 {
     // 使用安全优化版本进行实现 - Use safe optimized version for implementation
     url_decode_safe(str);
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 bool router<Handler>::hex_to_int_safe(char c, int &value) noexcept
 {
     if (c >= '0' && c <= '9') {
@@ -1312,14 +1323,14 @@ bool router<Handler>::hex_to_int_safe(char c, int &value) noexcept
     return false;
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 bool router<Handler>::hex_to_int(char c, int &value)
 {
     // 使用优化版本进行实现 - Use optimized version for implementation
     return hex_to_int_safe(c, value);
 }
 
-template <typename Handler>
+template <CallableHandler Handler>
 typename router<Handler>::cache_key_builder &router<Handler>::get_thread_local_cache_key_builder()
 {
     static thread_local cache_key_builder builder;

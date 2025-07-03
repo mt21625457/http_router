@@ -34,6 +34,9 @@ public:
     DummyHandler(DummyHandler &&) = default;
     DummyHandler &operator=(DummyHandler &&) = default;
 
+    // 仿函数调用操作符（满足CallableHandler约束）
+    void operator()() const tests/http_router_adv_test.cpp
+
     int id() const { return id_; }
 
 private:

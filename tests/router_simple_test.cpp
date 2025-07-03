@@ -15,14 +15,19 @@
 using namespace flc;
 
 /**
- * @brief 测试用的简单处理器类
+ * @brief 测试用的仿函数处理器类
  */
 class SimpleHandler
 {
 private:
-    int id_;
+    int id_ = 0; // 默认初始化支持默认构造
+    mutable int call_count_ = 0;
 
 public:
+    // 默认构造函数（满足CallableHandler约束）
+    SimpleHandler() = default;
+
+    // 带参数的构造函数
     explicit SimpleHandler(int id) : id_(id) {}
 
     // 禁用拷贝，只允许移动
@@ -34,8 +39,12 @@ public:
 
     ~SimpleHandler() = default;
 
+    // 仿函数调用操作符（满足CallableHandler约束）
+    void operator()() const { call_count_++; }
+
+    // 辅助方法
     int id() const { return id_; }
-    void handle() const {}
+    int call_count() const { return call_count_; }
 };
 
 /**
@@ -63,10 +72,7 @@ protected:
         router_.clear_cache();
     }
 
-    std::unique_ptr<SimpleHandler> make_handler(int id)
-    {
-        return std::make_unique<SimpleHandler>(id);
-    }
+    SimpleHandler make_handler(int id) { return SimpleHandler(id); }
 };
 
 /**
@@ -80,9 +86,9 @@ TEST_F(SimpleRouterTest, BasicAddAndFind)
     // 查找路由
     auto result = router_.find_route(HttpMethod::GET, "/api/health", params_, query_params_);
 
-    EXPECT_NE(result, nullptr);
-    if (result) {
-        EXPECT_EQ(result->id(), 1);
+    EXPECT_TRUE(result.has_value());
+    if (result.has_value()) {
+        EXPECT_EQ(result.value().get().id(), 1);
     }
 }
 
@@ -97,9 +103,9 @@ TEST_F(SimpleRouterTest, ParameterizedRoute)
     // 查找路由
     auto result = router_.find_route(HttpMethod::GET, "/users/123", params_, query_params_);
 
-    EXPECT_NE(result, nullptr);
-    if (result) {
-        EXPECT_EQ(result->id(), 2);
+    EXPECT_TRUE(result.has_value());
+    if (result.has_value()) {
+        EXPECT_EQ(result.value().get().id(), 2);
         EXPECT_EQ(params_["id"], "123");
     }
 }
@@ -116,9 +122,9 @@ TEST_F(SimpleRouterTest, WildcardRoute)
     auto result =
         router_.find_route(HttpMethod::GET, "/static/css/main.css", params_, query_params_);
 
-    EXPECT_NE(result, nullptr);
-    if (result) {
-        EXPECT_EQ(result->id(), 3);
+    EXPECT_TRUE(result.has_value());
+    if (result.has_value()) {
+        EXPECT_EQ(result->get().id(), 3);
         EXPECT_EQ(params_["*"], "css/main.css");
     }
 }
@@ -135,9 +141,9 @@ TEST_F(SimpleRouterTest, QueryParameters)
     auto result =
         router_.find_route(HttpMethod::GET, "/search?q=test&sort=date", params_, query_params_);
 
-    EXPECT_NE(result, nullptr);
-    if (result) {
-        EXPECT_EQ(result->id(), 4);
+    EXPECT_TRUE(result.has_value());
+    if (result.has_value()) {
+        EXPECT_EQ(result->get().id(), 4);
         EXPECT_EQ(query_params_["q"], "test");
         EXPECT_EQ(query_params_["sort"], "date");
     }
@@ -154,7 +160,7 @@ TEST_F(SimpleRouterTest, RouteNotFound)
     // 查找不存在的路由
     auto result = router_.find_route(HttpMethod::GET, "/api/posts", params_, query_params_);
 
-    EXPECT_EQ(result, nullptr);
+    EXPECT_FALSE(result.has_value());
 }
 
 /**
@@ -168,19 +174,62 @@ TEST_F(SimpleRouterTest, DifferentHttpMethods)
 
     // 测试GET方法
     auto get_result = router_.find_route(HttpMethod::GET, "/api/users", params_, query_params_);
-    EXPECT_NE(get_result, nullptr);
-    if (get_result) {
-        EXPECT_EQ(get_result->id(), 6);
+    EXPECT_TRUE(get_result.has_value());
+    if (get_result.has_value()) {
+        EXPECT_EQ(get_result->get().id(), 6);
     }
 
     // 测试POST方法
     auto post_result = router_.find_route(HttpMethod::POST, "/api/users", params_, query_params_);
-    EXPECT_NE(post_result, nullptr);
-    if (post_result) {
-        EXPECT_EQ(post_result->id(), 7);
+    EXPECT_TRUE(post_result.has_value());
+    if (post_result.has_value()) {
+        EXPECT_EQ(post_result->get().id(), 7);
     }
 
     // 测试不存在的方法
     auto put_result = router_.find_route(HttpMethod::PUT, "/api/users", params_, query_params_);
-    EXPECT_EQ(put_result, nullptr);
+    EXPECT_FALSE(put_result.has_value());
+}
+
+/**
+ * @brief 测试Lambda表达式支持
+ */
+TEST_F(SimpleRouterTest, LambdaExpressionSupport)
+{
+    // 测试简单lambda
+    {
+        auto simple_lambda = []() {
+            // 简单的lambda处理器
+        };
+
+        router<decltype(simple_lambda)> lambda_router;
+        lambda_router.add_route(HttpMethod::GET, "/lambda/simple", std::move(simple_lambda));
+        auto result =
+            lambda_router.find_route(HttpMethod::GET, "/lambda/simple", params_, query_params_);
+        EXPECT_TRUE(result.has_value());
+        if (result.has_value()) {
+            result->get()(); // 调用lambda
+        }
+    }
+
+    // 测试带值捕获的lambda
+    {
+        auto lambda_with_capture = [call_count = 0]() mutable -> int { return ++call_count; };
+
+        router<decltype(lambda_with_capture)> capture_router;
+        capture_router.add_route(HttpMethod::GET, "/lambda/capture",
+                                 std::move(lambda_with_capture));
+
+        auto result =
+            capture_router.find_route(HttpMethod::GET, "/lambda/capture", params_, query_params_);
+        EXPECT_TRUE(result.has_value());
+
+        if (result.has_value()) {
+            int count1 = result->get()();
+            EXPECT_EQ(count1, 1);
+
+            int count2 = result->get()();
+            EXPECT_EQ(count2, 2);
+        }
+    }
 }

@@ -25,7 +25,7 @@ namespace flc {
 
 // Forward declaration
 // 前向声明
-template <typename Handler>
+template <CallableHandler Handler>
 class router;
 
 /**
@@ -62,7 +62,7 @@ class router;
  * // Routes will be: /api/v1/users/:id, /api/v1/users
  * ```
  */
-template <typename Handler>
+template <CallableHandler Handler>
 class router_group : public std::enable_shared_from_this<router_group<Handler>>
 {
 public:
@@ -610,7 +610,7 @@ private:
  * auto group = create_router_group(router, "/api");
  * ```
  */
-template <typename Handler>
+template <CallableHandler Handler>
 std::shared_ptr<router_group<Handler>> create_router_group(router<Handler> &router,
                                                            std::string_view prefix = "")
 {
@@ -647,7 +647,7 @@ namespace middleware {
  * group->use(log_middleware);
  * ```
  */
-template <typename Handler>
+template <CallableHandler Handler>
 typename router_group<Handler>::MiddlewareFunc
 create_logger(std::function<void(const std::string &)> logger_func)
 {
@@ -684,7 +684,7 @@ create_logger(std::function<void(const std::string &)> logger_func)
  * group->use(auth_middleware);
  * ```
  */
-template <typename Handler>
+template <CallableHandler Handler>
 typename router_group<Handler>::MiddlewareFunc create_auth(std::function<bool()> auth_func)
 {
     return [auth_func](std::shared_ptr<Handler> &handler) {
@@ -718,7 +718,7 @@ typename router_group<Handler>::MiddlewareFunc create_auth(std::function<bool()>
  * "https://app.com"}); group->use(cors_middleware);
  * ```
  */
-template <typename Handler>
+template <CallableHandler Handler>
 typename router_group<Handler>::MiddlewareFunc
 create_cors(const std::vector<std::string> &allowed_origins = {"*"})
 {

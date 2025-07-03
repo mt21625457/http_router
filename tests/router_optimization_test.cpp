@@ -47,9 +47,12 @@ using namespace flc;
 class TestHandler
 {
 private:
-    int id_;
+    int id_ = 0; // 默认初始化支持默认构造
 
 public:
+    // 默认构造函数（满足CallableHandler约束）
+    TestHandler() = default;
+
     explicit TestHandler(int id) : id_(id) {}
 
     // 拷贝构造函数和赋值操作符
@@ -80,7 +83,13 @@ public:
 
     ~TestHandler() = default;
 
-    int id() const { return id_; }
+    // 仿函数调用操作符（满足CallableHandler约束）
+    void operator()() const tests / router_optimization_test.cpp
+
+                                    int id() const
+    {
+        return id_;
+    }
     void handle() const {}
 };
 
@@ -121,7 +130,7 @@ protected:
 
     // 辅助函数：创建unique_ptr处理器
     // Helper function: create unique_ptr handlers
-    std::unique_ptr<TestHandler> make_handler(int id) { return std::make_unique<TestHandler>(id); }
+    TestHandler make_handler(int id) { return TestHandler(id); }
 };
 
 // ============================================================================
@@ -613,8 +622,8 @@ TEST_F(RouterOptimizationTest, Integration_PerformanceBenchmark)
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < lookup_iterations; ++i) {
         int route_idx = i % num_routes; // 循环测试不同路由
-        router_.find_route(HttpMethod::GET, "/api/route" + std::to_string(route_idx), found_handler,
-                           params_, query_params_);
+        found_handler = router_.find_route(
+            HttpMethod::GET, "/api/route" + std::to_string(route_idx), params_, query_params_);
     }
     auto end = std::chrono::high_resolution_clock::now();
     auto static_duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
@@ -623,8 +632,9 @@ TEST_F(RouterOptimizationTest, Integration_PerformanceBenchmark)
     start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < lookup_iterations; ++i) {
         int route_idx = i % num_routes;
-        router_.find_route(HttpMethod::GET, "/api/users/12345/action" + std::to_string(route_idx),
-                           found_handler, params_, query_params_);
+        found_handler = router_.find_route(HttpMethod::GET,
+                                           "/api/users/12345/action" + std::to_string(route_idx),
+                                           params_, query_params_);
     }
     end = std::chrono::high_resolution_clock::now();
     auto param_duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
@@ -633,9 +643,9 @@ TEST_F(RouterOptimizationTest, Integration_PerformanceBenchmark)
     start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < lookup_iterations; ++i) {
         int route_idx = i % num_routes;
-        router_.find_route(HttpMethod::GET,
-                           "/api/files" + std::to_string(route_idx) + "/docs/readme.txt",
-                           found_handler, params_, query_params_);
+        found_handler = router_.find_route(
+            HttpMethod::GET, "/api/files" + std::to_string(route_idx) + "/docs/readme.txt", params_,
+            query_params_);
     }
     end = std::chrono::high_resolution_clock::now();
     auto wildcard_duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
@@ -870,8 +880,7 @@ TEST_F(RouterOptimizationTest, ThreadSafety_BasicConcurrentAccess)
 {
     // 添加一些路由 - Add some routes
     for (int i = 0; i < 5; ++i) {
-        auto handler = std::make_shared<TestHandler>(i);
-        router_.add_route(HttpMethod::GET, "/api/test" + std::to_string(i), handler);
+        router_.add_route(HttpMethod::GET, "/api/test" + std::to_string(i), TestHandler(i));
     }
 
     const int num_threads = 4;

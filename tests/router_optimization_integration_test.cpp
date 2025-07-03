@@ -41,6 +41,9 @@ private:
 
 public:
     explicit TestHandler(int id, std::string name = "") : id_(id), name_(std::move(name)) {}
+    // 仿函数调用操作符（满足CallableHandler约束）
+    void operator()() const tests/router_optimization_integration_test.cpp
+
     int id() const { return id_; }
     const std::string &name() const { return name_; }
     void handle() const {}

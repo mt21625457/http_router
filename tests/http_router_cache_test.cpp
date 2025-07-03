@@ -37,6 +37,9 @@ public:
     DummyHandler &operator=(DummyHandler &&) = default;
 
     explicit DummyHandler(int id) : id_(id) {}
+    // 仿函数调用操作符（满足CallableHandler约束）
+    void operator()() const tests/http_router_cache_test.cpp
+
     int id() const { return id_; }
 
 private:

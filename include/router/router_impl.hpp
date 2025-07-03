@@ -88,7 +88,7 @@ namespace flc {
  * @see router_group::create_group() for the underlying factory method
  *      参见router_group::create_group()了解底层工厂方法
  */
-template <typename Handler>
+template <CallableHandler Handler>
 std::shared_ptr<router_group<Handler>>
 router<Handler>::group(std::string_view prefix) {
   return router_group<Handler>::create_group(*this, prefix);

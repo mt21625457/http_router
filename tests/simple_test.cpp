@@ -11,6 +11,9 @@ private:
 
 public:
     explicit TestHandler(int id) : id_(id) {}
+    // 仿函数调用操作符（满足CallableHandler约束）
+    void operator()() const tests/simple_test.cpp
+
     int id() const { return id_; }
     void handle() const {}
 };
