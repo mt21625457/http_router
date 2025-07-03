@@ -12,7 +12,10 @@ private:
 public:
     explicit TestHandler(int id) : id_(id) {}
     // 仿函数调用操作符（满足CallableHandler约束）
-    void operator()() const tests/simple_test.cpp
+    void operator()() const
+    {
+        // Implementation of operator()
+    }
 
     int id() const { return id_; }
     void handle() const {}
@@ -29,7 +32,6 @@ protected:
     {
         try {
             if (router_) {
-                router_->clear_cache();
                 router_.reset();
             }
         } catch (...) {
@@ -61,7 +63,5 @@ TEST_F(SimpleRouterTest, BasicFunctionality)
 
 TEST_F(SimpleRouterTest, CacheKeyBuilder)
 {
-    auto &builder = router_->get_thread_local_cache_key_builder();
-    const std::string &key = builder.build(HttpMethod::GET, "/api/users");
-    EXPECT_EQ(key, "GET:/api/users");
+    // 删除这个测试，因为缓存功能已经被移除
 }

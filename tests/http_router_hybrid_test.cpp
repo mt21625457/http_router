@@ -37,7 +37,7 @@ public:
 
     explicit DummyHandler(int id) : id_(id) {}
     // 仿函数调用操作符（满足CallableHandler约束）
-    void operator()() const tests/http_router_hybrid_test.cpp
+    void operator()() const {}
 
     int id() const { return id_; }
 
@@ -53,11 +53,9 @@ protected:
         router_ = std::make_unique<router<DummyHandler>>();
         params_.clear();
         query_params_.clear();
-        found_handler_ = nullptr;
     }
 
     std::unique_ptr<router<DummyHandler>> router_;
-    std::shared_ptr<DummyHandler> found_handler_;
     std::map<std::string, std::string> params_;
     std::map<std::string, std::string> query_params_;
 };
@@ -66,43 +64,44 @@ protected:
 TEST_F(HybridRoutingTest, BasicHybridRouting)
 {
     // Add different types of routes
-    auto h1 = std::make_shared<DummyHandler>(1);
-    auto h2 = std::make_shared<DummyHandler>(2);
-    auto h3 = std::make_shared<DummyHandler>(3);
+    auto h1 = DummyHandler(1);
+    auto h2 = DummyHandler(2);
+    auto h3 = DummyHandler(3);
 
     // These routes should be stored in hash table
-    router_->add_route(HttpMethod::GET, "/api", h1);   // Short path
-    router_->add_route(HttpMethod::GET, "/about", h1); // Short path
-    router_->add_route(HttpMethod::GET, "/login", h1); // Short path
+    router_->add_route(HttpMethod::GET, "/api", std::move(h1));   // Short path
+    router_->add_route(HttpMethod::GET, "/about", std::move(h1)); // Short path
+    router_->add_route(HttpMethod::GET, "/login", std::move(h1)); // Short path
 
     // These routes should be stored in Trie tree
-    router_->add_route(HttpMethod::GET, "/api/users/profiles/settings", h2);         // Long path
-    router_->add_route(HttpMethod::GET, "/api/users/profiles/photos", h2);           // Long path
-    router_->add_route(HttpMethod::GET, "/api/users/profiles/friends/requests", h2); // Long path
+    router_->add_route(HttpMethod::GET, "/api/users/profiles/settings", std::move(h2)); // Long path
+    router_->add_route(HttpMethod::GET, "/api/users/profiles/photos", std::move(h2));   // Long path
+    router_->add_route(HttpMethod::GET, "/api/users/profiles/friends/requests",
+                       std::move(h2)); // Long path
 
     // These should be stored as parameterized routes
-    router_->add_route(HttpMethod::GET, "/users/:userId", h3);              // Parameterized route
-    router_->add_route(HttpMethod::GET, "/api/posts/:postId/comments", h3); // Parameterized route
-    router_->add_route(HttpMethod::GET, "/files/*", h3);                    // Wildcard route
+    router_->add_route(HttpMethod::GET, "/users/:userId", std::move(h3)); // Parameterized route
+    router_->add_route(HttpMethod::GET, "/api/posts/:postId/comments",
+                       std::move(h3));                              // Parameterized route
+    router_->add_route(HttpMethod::GET, "/files/*", std::move(h3)); // Wildcard route
 
     // Test hash table routes
-    EXPECT_EQ(router_->find_route(HttpMethod::GET, "/api", found_handler_, params_, query_params_),
-              0);
-    EXPECT_EQ(found_handler_->id(), 1);
+    auto result = router_->find_route(HttpMethod::GET, "/api", params_, query_params_);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().get().id(), 1);
 
     // Test Trie tree routes
     params_.clear();
-    EXPECT_EQ(router_->find_route(HttpMethod::GET, "/api/users/profiles/settings", found_handler_,
-                                  params_, query_params_),
-              0);
-    EXPECT_EQ(found_handler_->id(), 2);
+    result = router_->find_route(HttpMethod::GET, "/api/users/profiles/settings", params_,
+                                 query_params_);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().get().id(), 2);
 
     // Test parameterized routes
     params_.clear();
-    EXPECT_EQ(
-        router_->find_route(HttpMethod::GET, "/users/42", found_handler_, params_, query_params_),
-        0);
-    EXPECT_EQ(found_handler_->id(), 3);
+    result = router_->find_route(HttpMethod::GET, "/users/42", params_, query_params_);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().get().id(), 3);
     EXPECT_EQ(params_["userId"], "42");
 }
 
@@ -111,41 +110,43 @@ TEST_F(HybridRoutingTest, RoutingEfficiency)
 {
     // Add many routes to test efficiency
     constexpr int kNumRoutes = 1000;
-    std::vector<std::shared_ptr<DummyHandler>> handlers;
+    std::vector<DummyHandler> handlers;
 
     for (int i = 0; i < kNumRoutes; ++i) {
-        handlers.push_back(std::make_shared<DummyHandler>(i));
+        handlers.push_back(DummyHandler(i));
     }
 
     // Add short paths (hash table)
     for (int i = 0; i < 200; ++i) {
         std::string path = "/short" + std::to_string(i);
-        router_->add_route(HttpMethod::GET, path, handlers[i]);
+        router_->add_route(HttpMethod::GET, path, std::move(handlers[i]));
     }
 
     // Add long paths (Trie tree)
     for (int i = 200; i < 500; ++i) {
         std::string path = "/api/users/profiles/settings/" + std::to_string(i);
-        router_->add_route(HttpMethod::GET, path, handlers[i]);
+        router_->add_route(HttpMethod::GET, path, std::move(handlers[i]));
     }
 
     // Add parameterized routes
     for (int i = 500; i < 800; ++i) {
         std::string path = "/users/" + std::to_string(i) + "/:id";
-        router_->add_route(HttpMethod::GET, path, handlers[i]);
+        router_->add_route(HttpMethod::GET, path, std::move(handlers[i]));
     }
 
     // Add wildcard routes
     for (int i = 800; i < kNumRoutes; ++i) {
         std::string path = "/files/" + std::to_string(i) + "/*";
-        router_->add_route(HttpMethod::GET, path, handlers[i]);
+        router_->add_route(HttpMethod::GET, path, std::move(handlers[i]));
     }
 
     // Test hash table route lookup performance
     auto start_time = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < 200; ++i) {
         std::string path = "/short" + std::to_string(i);
-        router_->find_route(HttpMethod::GET, path, found_handler_, params_, query_params_);
+        auto result = router_->find_route(HttpMethod::GET, path, params_, query_params_);
+        EXPECT_TRUE(result.has_value());
+        EXPECT_EQ(result.value().get().id(), i);
     }
     auto end_time = std::chrono::high_resolution_clock::now();
     auto hash_time =
@@ -155,7 +156,9 @@ TEST_F(HybridRoutingTest, RoutingEfficiency)
     start_time = std::chrono::high_resolution_clock::now();
     for (int i = 200; i < 500; ++i) {
         std::string path = "/api/users/profiles/settings/" + std::to_string(i);
-        router_->find_route(HttpMethod::GET, path, found_handler_, params_, query_params_);
+        auto result = router_->find_route(HttpMethod::GET, path, params_, query_params_);
+        EXPECT_TRUE(result.has_value());
+        EXPECT_EQ(result.value().get().id(), i);
     }
     end_time = std::chrono::high_resolution_clock::now();
     auto trie_time =
@@ -165,7 +168,9 @@ TEST_F(HybridRoutingTest, RoutingEfficiency)
     start_time = std::chrono::high_resolution_clock::now();
     for (int i = 500; i < 800; ++i) {
         std::string path = "/users/" + std::to_string(i) + "/123";
-        router_->find_route(HttpMethod::GET, path, found_handler_, params_, query_params_);
+        auto result = router_->find_route(HttpMethod::GET, path, params_, query_params_);
+        EXPECT_TRUE(result.has_value());
+        EXPECT_EQ(result.value().get().id(), i);
     }
     end_time = std::chrono::high_resolution_clock::now();
     auto param_time =
@@ -184,25 +189,24 @@ TEST_F(HybridRoutingTest, RoutingEfficiency)
 TEST_F(HybridRoutingTest, RoutingPriority)
 {
     // Create route handlers
-    auto static_handler = std::make_shared<DummyHandler>(1);
-    auto param_handler = std::make_shared<DummyHandler>(2);
+    auto static_handler = DummyHandler(1);
+    auto param_handler = DummyHandler(2);
 
     // Add static and parameterized routes to same path pattern
-    router_->add_route(HttpMethod::GET, "/api/users", static_handler);    // Static route
-    router_->add_route(HttpMethod::GET, "/api/:resource", param_handler); // Parameterized route
+    router_->add_route(HttpMethod::GET, "/api/users", std::move(static_handler)); // Static route
+    router_->add_route(HttpMethod::GET, "/api/:resource",
+                       std::move(param_handler)); // Parameterized route
 
     // Test route matching priority - static routes should take priority over parameterized routes
-    EXPECT_EQ(
-        router_->find_route(HttpMethod::GET, "/api/users", found_handler_, params_, query_params_),
-        0);
-    EXPECT_EQ(found_handler_->id(), 1); // Should match static route
+    auto result = router_->find_route(HttpMethod::GET, "/api/users", params_, query_params_);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().get().id(), 1); // Should match static route
 
     // Test parameterized route
     params_.clear();
-    EXPECT_EQ(router_->find_route(HttpMethod::GET, "/api/products", found_handler_, params_,
-                                  query_params_),
-              0);
-    EXPECT_EQ(found_handler_->id(), 2); // Should match parameterized route
+    result = router_->find_route(HttpMethod::GET, "/api/products", params_, query_params_);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().get().id(), 2); // Should match parameterized route
     EXPECT_EQ(params_["resource"], "products");
 }
 
@@ -210,26 +214,29 @@ TEST_F(HybridRoutingTest, RoutingPriority)
 TEST_F(HybridRoutingTest, SegmentIndexingOptimization)
 {
     // Create many parameterized routes with different segment counts
-    auto handler1 = std::make_shared<DummyHandler>(1);
-    auto handler2 = std::make_shared<DummyHandler>(2);
-    auto handler3 = std::make_shared<DummyHandler>(3);
+    auto handler1 = DummyHandler(1);
+    auto handler2 = DummyHandler(2);
+    auto handler3 = DummyHandler(3);
 
     // 1-segment routes
-    router_->add_route(HttpMethod::GET, "/:param", handler1);
+    router_->add_route(HttpMethod::GET, "/:param", std::move(handler1));
 
     // 2-segment routes
     for (int i = 0; i < 100; ++i) {
-        router_->add_route(HttpMethod::GET, "/test" + std::to_string(i) + "/:param", handler1);
+        router_->add_route(HttpMethod::GET, "/test" + std::to_string(i) + "/:param",
+                           std::move(handler1));
     }
 
     // 3-segment routes
     for (int i = 0; i < 100; ++i) {
-        router_->add_route(HttpMethod::GET, "/api/:resource/:id" + std::to_string(i), handler2);
+        router_->add_route(HttpMethod::GET, "/api/:resource/:id" + std::to_string(i),
+                           std::move(handler2));
     }
 
     // 4-segment routes
     for (int i = 0; i < 100; ++i) {
-        router_->add_route(HttpMethod::GET, "/api/v1/:resource/:id" + std::to_string(i), handler3);
+        router_->add_route(HttpMethod::GET, "/api/v1/:resource/:id" + std::to_string(i),
+                           std::move(handler3));
     }
 
     // Test 3-segment route matching efficiency - should directly lookup 3-segment routes
@@ -237,10 +244,10 @@ TEST_F(HybridRoutingTest, SegmentIndexingOptimization)
 
     for (int i = 0; i < 20; ++i) {
         params_.clear();
-        EXPECT_EQ(router_->find_route(HttpMethod::GET, "/api/users/id" + std::to_string(i),
-                                      found_handler_, params_, query_params_),
-                  0);
-        EXPECT_EQ(found_handler_->id(), 2);
+        auto result = router_->find_route(HttpMethod::GET, "/api/users/id" + std::to_string(i),
+                                          params_, query_params_);
+        EXPECT_TRUE(result.has_value());
+        EXPECT_EQ(result.value().get().id(), 2);
     }
 
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -258,14 +265,14 @@ TEST_F(HybridRoutingTest, TriePrefixSharing)
 {
     // Create many routes with common prefixes
     constexpr int kNumRoutes = 1000;
-    std::vector<std::shared_ptr<DummyHandler>> handlers;
+    std::vector<DummyHandler> handlers;
 
     for (int i = 0; i < kNumRoutes; ++i) {
-        handlers.push_back(std::make_shared<DummyHandler>(i));
+        handlers.push_back(DummyHandler(i));
 
         // All routes share "/api/v1/users/profiles" prefix
         std::string path = "/api/v1/users/profiles/setting" + std::to_string(i);
-        router_->add_route(HttpMethod::GET, path, handlers[i]);
+        router_->add_route(HttpMethod::GET, path, std::move(handlers[i]));
     }
 
     // Randomly access some routes, measure performance
@@ -278,8 +285,9 @@ TEST_F(HybridRoutingTest, TriePrefixSharing)
     for (int i = 0; i < 100; ++i) {
         int idx = distrib(gen);
         std::string path = "/api/v1/users/profiles/setting" + std::to_string(idx);
-        router_->find_route(HttpMethod::GET, path, found_handler_, params_, query_params_);
-        EXPECT_EQ(found_handler_->id(), idx);
+        auto result = router_->find_route(HttpMethod::GET, path, params_, query_params_);
+        EXPECT_TRUE(result.has_value());
+        EXPECT_EQ(result.value().get().id(), idx);
     }
 
     auto end_time = std::chrono::high_resolution_clock::now();

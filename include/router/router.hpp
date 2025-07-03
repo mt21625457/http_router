@@ -165,12 +165,9 @@ inline HttpMethod from_string(std::string_view s)
  *                 必须满足CallableHandler概念（可移动、默认可构造、可调用）
  *
  * Features / 功能特性:
- * - Thread-safe routing with thread-local caching / 线程安全路由与线程本地缓存
- * - Multiple storage strategies for optimal performance /
- * 多种存储策略实现最优性能
- * - Support for static, parameterized, and wildcard routes /
- * 支持静态、参数化和通配符路由
- * - LRU cache for frequently accessed routes / LRU缓存用于频繁访问的路由
+ * - Thread-safe routing / 线程安全路由
+ * - Multiple storage strategies for optimal performance / 多种存储策略实现最优性能
+ * - Support for static, parameterized, and wildcard routes / 支持静态、参数化和通配符路由
  * - Query parameter parsing with URL decoding / 查询参数解析与URL解码
  * - Router groups for organizing routes / 路由组用于组织路由
  * - Type-safe handler constraints with C++20 concepts / 使用C++20概念的类型安全处理器约束
@@ -180,8 +177,15 @@ inline HttpMethod from_string(std::string_view s)
  * // Define a handler functor
  * class MyHandler {
  * public:
+ *     void operator()() {
+ *         // Handle request
+ *     }
+ * };
  *
- **/
+ * router<MyHandler> r;
+ * r.add_route(HttpMethod::GET, "/users/:id", MyHandler{});
+ * ```
+ */
 
 template <CallableHandler Handler>
 class router
@@ -230,67 +234,6 @@ private:
         ~RouteInfo() = default; // unique_ptr自动处理内存管理
     };
 
-    /**
-     * @brief Cache entry for storing route lookup results (using reference wrapper)
-     *        用于存储路由查找结果的缓存条目（使用引用包装器）
-     */
-    struct CacheEntry
-    {
-        std::optional<std::reference_wrapper<Handler>>
-            handler;                               ///< Cached handler reference / 缓存的处理器引用
-        std::map<std::string, std::string> params; ///< Cached parameters / 缓存的参数
-        std::list<std::string>::iterator lru_it;   ///< LRU list iterator for O(1) updates /
-                                                   ///< LRU列表迭代器用于O(1)更新
-
-        // 默认构造函数 - Default constructor
-        CacheEntry() : handler(std::nullopt) {}
-
-        // 构造函数 - Constructor
-        CacheEntry(Handler &h, const std::map<std::string, std::string> &p)
-            : handler(std::ref(h)), params(p)
-        {
-        }
-
-        // 拷贝构造函数 - Copy constructor
-        CacheEntry(const CacheEntry &other)
-            : handler(other.handler), params(other.params), lru_it(other.lru_it)
-        {
-        }
-
-        // 移动构造函数 - Move constructor
-        CacheEntry(CacheEntry &&other) noexcept
-            : handler(other.handler), params(std::move(other.params)), lru_it(other.lru_it)
-        {
-            other.handler = std::nullopt;
-        }
-
-        // 拷贝赋值操作符 - Copy assignment operator
-        CacheEntry &operator=(const CacheEntry &other)
-        {
-            if (this != &other) {
-                handler = other.handler;
-                params = other.params;
-                lru_it = other.lru_it;
-            }
-            return *this;
-        }
-
-        // 移动赋值操作符 - Move assignment operator
-        CacheEntry &operator=(CacheEntry &&other) noexcept
-        {
-            if (this != &other) {
-                handler = other.handler;
-                params = std::move(other.params);
-                lru_it = other.lru_it;
-                other.handler = std::nullopt;
-            }
-            return *this;
-        }
-
-        // 析构函数 - Destructor
-        ~CacheEntry() = default;
-    };
-
     // Storage structures optimized for different route patterns
     // 针对不同路由模式优化的存储结构
 
@@ -321,88 +264,11 @@ private:
     std::unordered_map<HttpMethod, std::unordered_map<size_t, std::vector<size_t>>>
         segment_index_by_method_;
 
-    /**
-     * @brief 高效的缓存键构建器 - Efficient cache key builder
-     *
-     * 设计目的：避免每次查找都创建新的字符串对象，重用内部缓冲区减少内存分配开销
-     * Design purpose: Avoid creating new string objects for each lookup, reuse internal buffer to
-     * reduce memory allocation overhead
-     */
-    class cache_key_builder
-    {
-    private:
-        std::string buffer_; ///< 内部字符串缓冲区 - Internal string buffer
-
-    public:
-        /**
-         * @brief 构造函数：预分配合理大小的缓冲区
-         *        Constructor: Pre-allocate reasonable size buffer
-         */
-        cache_key_builder()
-        {
-            buffer_.reserve(128); // 预分配128字节，足以容纳大多数缓存键 - Pre-allocate 128 bytes,
-                                  // sufficient for most cache keys
-        }
-
-        /**
-         * @brief 构建缓存键 - Build cache key
-         * @param method HTTP方法枚举 - HTTP method enumeration
-         * @param path 路径字符串视图（零拷贝） - Path string view (zero-copy)
-         * @return const std::string& 构建的缓存键的常量引用 - Constant reference to built cache key
-         */
-        const std::string &build(HttpMethod method, std::string_view path)
-        {
-            buffer_.clear();
-            buffer_.append(to_string(method));
-            buffer_.append(":");
-            buffer_.append(path);
-            return buffer_;
-        }
-
-        /**
-         * @brief 获取缓冲区当前容量 - Get current buffer capacity
-         * @return size_t 缓冲区容量（字节） - Buffer capacity (bytes)
-         */
-        size_t capacity() const noexcept { return buffer_.capacity(); }
-
-        /**
-         * @brief 重置构建器状态 - Reset builder state
-         * @param new_capacity 新的缓冲区容量，0表示保持当前容量 - New buffer capacity, 0 means keep
-         * current capacity
-         */
-        void reset(size_t new_capacity = 0)
-        {
-            buffer_.clear();
-            if (new_capacity > 0) {
-                buffer_.reserve(new_capacity);
-            }
-        }
-    };
-
-    /**
-     * @brief Thread-local cache access methods for route lookup results
-     *        线程本地缓存访问方法用于路由查找结果
-     */
-    static std::unordered_map<std::string, CacheEntry> &get_thread_local_cache()
-    {
-        static thread_local std::unordered_map<std::string, CacheEntry> cache;
-        return cache;
-    }
-
-    static std::list<std::string> &get_thread_local_lru_list()
-    {
-        static thread_local std::list<std::string> lru_list;
-        return lru_list;
-    }
-
     // Performance tuning constants
     // 性能调优常量
     static constexpr size_t SHORT_PATH_THRESHOLD =
         10; ///< Maximum length for short paths / 短路径的最大长度
     static constexpr size_t SEGMENT_THRESHOLD = 1; ///< Path segment threshold / 路径段阈值
-    static constexpr size_t MAX_CACHE_SIZE =
-        5000; ///< Maximum cache entries per thread / 每个线程的最大缓存条目数
-    static constexpr bool ENABLE_CACHE = true; ///< Whether to enable caching / 是否启用缓存
 
 public:
     /**
@@ -487,15 +353,6 @@ public:
                std::map<std::string, std::string> &query_params);
 
     /**
-     * @brief Clear thread-local route cache
-     *        清除线程本地路由缓存
-     *
-     * This only clears the cache for the current thread. Other threads' caches
-     * remain intact. 这仅清除当前线程的缓存。其他线程的缓存保持不变。
-     */
-    void clear_cache();
-
-    /**
      * @brief Clear all route data structures (for testing and cleanup)
      *        清理所有路由数据结构（用于测试和清理）
      *
@@ -570,12 +427,6 @@ public:
     bool hex_to_int_safe(char c, int &value) noexcept;
 
     /**
-     * @brief Access thread-local cache key builder (public for testing)
-     *        访问线程本地缓存键构建器（公开用于测试）
-     */
-    static cache_key_builder &get_thread_local_cache_key_builder();
-
-    /**
      * @brief Split path into segments for matching (legacy version for testing)
      *        将路径分割为段以进行匹配（传统版本用于测试）
      *
@@ -600,47 +451,6 @@ private:
      * @param path [IN/OUT] Path to normalize / [输入/输出] 要规范化的路径
      */
     static void normalize_path(std::string &path);
-
-    /**
-     * @brief Generate cache key for route lookup
-     *        为路由查找生成缓存键
-     *
-     * @param method HTTP method / HTTP方法
-     * @param path URL path / URL路径
-     * @return std::string Cache key / 缓存键
-     */
-    std::string generate_cache_key(HttpMethod method, const std::string &path) const;
-
-    /**
-     * @brief Check thread-local route cache for matching route
-     *        检查线程本地路由缓存中的匹配路由
-     *
-     * @param method HTTP method / HTTP方法
-     * @param path URL path / URL路径
-     * @param params [OUT] Cached parameters if found / [输出] 找到的缓存参数
-     * @return Handler* Cached handler if found, nullptr otherwise / 找到的缓存处理器，否则为nullptr
-     */
-    std::optional<std::reference_wrapper<Handler>>
-    check_route_cache(HttpMethod method, const std::string &path,
-                      std::map<std::string, std::string> &params) const;
-
-    /**
-     * @brief Cache route lookup result in thread-local cache
-     *        在线程本地缓存中缓存路由查找结果
-     *
-     * @param method HTTP method / HTTP方法
-     * @param path URL path / URL路径
-     * @param handler Route handler to cache / 要缓存的路由处理器
-     * @param params Route parameters to cache / 要缓存的路由参数
-     */
-    void cache_route(HttpMethod method, const std::string &path, Handler &handler,
-                     const std::map<std::string, std::string> &params) const;
-
-    /**
-     * @brief Remove least recently used entries from thread-local cache
-     *        从线程本地缓存中删除最近最少使用的条目
-     */
-    void prune_cache() const;
 
     /**
      * @brief Count the number of path segments
@@ -710,13 +520,7 @@ void router<Handler>::add_route(HttpMethod method, const std::string &path, Hand
     std::string normalized_path = path;
     normalize_path(normalized_path);
 
-    // Clear cache to maintain consistency
-    if (ENABLE_CACHE) {
-        clear_cache();
-    }
-
     // Parse path information using optimized version
-    // 使用优化版本解析路径信息
     std::vector<std::string> segments;
     split_path_optimized(normalized_path, segments);
 
@@ -740,12 +544,8 @@ void router<Handler>::add_route(HttpMethod method, const std::string &path, Hand
     }
 
     // Storage strategy based on route characteristics
-    // 暂时禁用trie存储以避免内存管理问题 - Temporarily disable trie storage to avoid memory
-    // management issues
     if (!has_params && !has_wildcard) {
-        // Static route - 暂时全部使用hash map存储 - Temporarily use hash map for all static routes
-        // 使用emplace直接构造RouteInfo对象，避免拷贝 - Use emplace to construct RouteInfo directly,
-        // avoiding copies
+        // Static route - 暂时全部使用hash map存储
         static_hash_routes_by_method_[method].emplace(
             std::move(normalized_path), RouteInfo(std::move(handler), param_names, has_wildcard));
     } else {
@@ -753,29 +553,15 @@ void router<Handler>::add_route(HttpMethod method, const std::string &path, Hand
         auto &route_vector = param_routes_by_method_[method];
 
         // 性能优化：为大规模场景预分配vector容量，减少重分配
-        // Performance optimization: Pre-allocate vector capacity for large-scale scenarios to
-        // reduce reallocations
         if (route_vector.capacity() == 0) {
-            // 首次使用时预分配合理的容量（假设可能有几百到几千个参数化路由）
-            // Pre-allocate reasonable capacity on first use (assuming hundreds to thousands of
-            // parameterized routes)
             route_vector.reserve(2000);
         } else if (route_vector.size() >= route_vector.capacity() * 0.9) {
-            // 当容量即将不足时，提前扩容以避免频繁重分配
-            // When capacity is almost full, expand proactively to avoid frequent reallocations
             route_vector.reserve(route_vector.capacity() * 2);
         }
 
-        // 使用emplace_back直接构造pair和RouteInfo对象，避免所有拷贝和移动
-        // Use emplace_back to construct pair and RouteInfo objects directly, avoiding all copying
-        // and moving
         route_vector.emplace_back(
             std::move(normalized_path),
             RouteInfo(std::move(handler), std::move(param_names), has_wildcard));
-
-        // Update segment index for faster lookup (暂时禁用以避免复杂性 - temporarily disabled to
-        // avoid complexity) size_t segment_count = segments.size();
-        // segment_index_by_method_[method][segment_count].push_back(route_index);
     }
 }
 
@@ -800,23 +586,12 @@ router<Handler>::find_route(HttpMethod method, std::string_view path,
 
     normalize_path(path_without_query);
 
-    // Check cache first
-    if (ENABLE_CACHE) {
-        auto cached_handler = check_route_cache(method, path_without_query, params);
-        if (cached_handler.has_value()) {
-            return cached_handler;
-        }
-    }
-
     // Try static routes - hash map only (trie temporarily disabled)
     auto hash_method_it = static_hash_routes_by_method_.find(method);
     if (hash_method_it != static_hash_routes_by_method_.end()) {
         auto route_it = hash_method_it->second.find(path_without_query);
         if (route_it != hash_method_it->second.end()) {
             Handler &found_handler = route_it->second.handler;
-            if (ENABLE_CACHE) {
-                cache_route(method, path_without_query, found_handler, params);
-            }
             return std::ref(found_handler);
         }
     }
@@ -839,9 +614,6 @@ router<Handler>::find_route(HttpMethod method, std::string_view path,
             for (auto &route_pair : param_method_it->second) {
                 if (match_route(path_without_query, route_pair.first, route_pair.second, params)) {
                     Handler &found_handler = route_pair.second.handler;
-                    if (ENABLE_CACHE) {
-                        cache_route(method, path_without_query, found_handler, params);
-                    }
                     return std::ref(found_handler);
                 }
             }
@@ -852,53 +624,17 @@ router<Handler>::find_route(HttpMethod method, std::string_view path,
 }
 
 template <CallableHandler Handler>
-void router<Handler>::clear_cache()
-{
-    try {
-        // 获取thread_local引用，但要小心析构顺序
-        // Get thread_local references, but be careful about destruction order
-        auto &cache = get_thread_local_cache();
-        auto &lru_list = get_thread_local_lru_list();
-
-        // 先清空cache，这会销毁所有CacheEntry和其中的迭代器
-        // Clear cache first, this destroys all CacheEntry and their iterators
-        cache.clear();
-
-        // 然后清空LRU list，此时所有迭代器都已失效，这是安全的
-        // Then clear LRU list, all iterators are already invalidated, this is safe
-        lru_list.clear();
-    } catch (...) {
-        // 在析构过程中忽略thread_local相关的异常
-        // Ignore thread_local related exceptions during destruction
-        // 这对于测试环境中的内存清理特别重要
-        // This is especially important for memory cleanup in test environments
-    }
-}
-
-template <CallableHandler Handler>
 void router<Handler>::clear_all_routes()
 {
     try {
-        // 首先清理缓存 - Clear cache first
-        clear_cache();
-
         // 直接清理容器，让shared_ptr自动管理内存
-        // Directly clear containers, let shared_ptr manage memory automatically
-
-        // 清理静态路由 - Clear static routes
         static_hash_routes_by_method_.clear();
-
-        // 清理trie路由（虽然已禁用，但为了安全） - Clear trie routes (disabled but for safety)
         static_trie_routes_by_method_.clear();
-
-        // 清理参数化路由 - Clear parameterized routes
         param_routes_by_method_.clear();
-
-        // 清理段索引 - Clear segment index
         segment_index_by_method_.clear();
 
     } catch (...) {
-        // 忽略清理过程中的异常 - Ignore exceptions during cleanup
+        // 忽略清理过程中的异常
     }
 }
 
@@ -938,83 +674,6 @@ void router<Handler>::normalize_path(std::string &path)
     }
 
     path = result;
-}
-
-template <CallableHandler Handler>
-std::string router<Handler>::generate_cache_key(HttpMethod method, const std::string &path) const
-{
-    // 使用线程本地缓存键构建器以提高性能 - Use thread-local cache key builder for better
-    // performance
-    auto &builder = get_thread_local_cache_key_builder();
-    return builder.build(method, path);
-}
-
-template <CallableHandler Handler>
-std::optional<std::reference_wrapper<Handler>>
-router<Handler>::check_route_cache(HttpMethod method, const std::string &path,
-                                   std::map<std::string, std::string> &params) const
-{
-    auto &cache = get_thread_local_cache();
-    auto &lru_list = get_thread_local_lru_list();
-
-    std::string cache_key = generate_cache_key(method, path);
-    auto it = cache.find(cache_key);
-
-    if (it != cache.end() && it->second.handler.has_value()) {
-        // Cache hit - move to front of LRU list
-        lru_list.splice(lru_list.begin(), lru_list, it->second.lru_it);
-
-        params = it->second.params;
-        return it->second.handler;
-    }
-
-    return std::nullopt;
-}
-
-template <CallableHandler Handler>
-void router<Handler>::cache_route(HttpMethod method, const std::string &path, Handler &handler,
-                                  const std::map<std::string, std::string> &params) const
-{
-    auto &cache = get_thread_local_cache();
-    auto &lru_list = get_thread_local_lru_list();
-
-    std::string cache_key = generate_cache_key(method, path);
-
-    // Check if already in cache
-    auto it = cache.find(cache_key);
-    if (it != cache.end()) {
-        // Update existing entry and move to front
-        lru_list.splice(lru_list.begin(), lru_list, it->second.lru_it);
-        it->second.handler = std::ref(handler);
-        it->second.params = params;
-        return;
-    }
-
-    // Add new entry
-    lru_list.push_front(cache_key);
-
-    CacheEntry entry;
-    entry.handler = std::ref(handler);
-    entry.params = params;
-    entry.lru_it = lru_list.begin();
-
-    cache[cache_key] = entry;
-
-    // Prune if necessary
-    prune_cache();
-}
-
-template <CallableHandler Handler>
-void router<Handler>::prune_cache() const
-{
-    auto &cache = get_thread_local_cache();
-    auto &lru_list = get_thread_local_lru_list();
-
-    while (cache.size() > MAX_CACHE_SIZE) {
-        std::string lru_key = lru_list.back();
-        cache.erase(lru_key);
-        lru_list.pop_back();
-    }
 }
 
 template <CallableHandler Handler>
@@ -1328,13 +987,6 @@ bool router<Handler>::hex_to_int(char c, int &value)
 {
     // 使用优化版本进行实现 - Use optimized version for implementation
     return hex_to_int_safe(c, value);
-}
-
-template <CallableHandler Handler>
-typename router<Handler>::cache_key_builder &router<Handler>::get_thread_local_cache_key_builder()
-{
-    static thread_local cache_key_builder builder;
-    return builder;
 }
 
 } // namespace flc

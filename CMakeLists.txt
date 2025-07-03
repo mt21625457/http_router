@@ -33,7 +33,7 @@ set(TEST_TARGETS
 # Add a single test executable with all test sources
 add_executable(http_router_tests
     tests/http_router_test.cpp
-    tests/http_router_cache_test.cpp
+    tests/http_router_performance_test.cpp
     tests/http_router_hybrid_test.cpp
     tests/http_router_adv_test.cpp
     tests/http_router_stress_test.cpp

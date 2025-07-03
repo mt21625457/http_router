@@ -197,9 +197,9 @@ public:
      *      ->get("/users/:id", get_user_handler);
      * ```
      */
-    router_group &get(std::string_view path, HandlerPtr handler)
+    router_group &get(std::string_view path, Handler &&handler)
     {
-        return add_route(HttpMethod::GET, path, handler);
+        return add_route(HttpMethod::GET, path, std::move(handler));
     }
 
     /**
@@ -217,9 +217,9 @@ public:
      *      ->post("/users/:id/avatar", upload_avatar_handler);
      * ```
      */
-    router_group &post(std::string_view path, HandlerPtr handler)
+    router_group &post(std::string_view path, Handler &&handler)
     {
-        return add_route(HttpMethod::POST, path, handler);
+        return add_route(HttpMethod::POST, path, std::move(handler));
     }
 
     /**
@@ -237,9 +237,9 @@ public:
      *      ->put("/users/:id/profile", update_profile_handler);
      * ```
      */
-    router_group &put(std::string_view path, HandlerPtr handler)
+    router_group &put(std::string_view path, Handler &&handler)
     {
-        return add_route(HttpMethod::PUT, path, handler);
+        return add_route(HttpMethod::PUT, path, std::move(handler));
     }
 
     /**
@@ -260,9 +260,9 @@ public:
      *      ->delete_("/users/:id/avatar", delete_avatar_handler);
      * ```
      */
-    router_group &delete_(std::string_view path, HandlerPtr handler)
+    router_group &delete_(std::string_view path, Handler &&handler)
     {
-        return add_route(HttpMethod::DELETE, path, handler);
+        return add_route(HttpMethod::DELETE, path, std::move(handler));
     }
 
     /**
@@ -280,9 +280,9 @@ public:
      *      ->patch("/users/:id/settings", patch_settings_handler);
      * ```
      */
-    router_group &patch(std::string_view path, HandlerPtr handler)
+    router_group &patch(std::string_view path, Handler &&handler)
     {
-        return add_route(HttpMethod::PATCH, path, handler);
+        return add_route(HttpMethod::PATCH, path, std::move(handler));
     }
 
     /**
@@ -299,9 +299,9 @@ public:
      * group->head("/users/:id", check_user_exists_handler);
      * ```
      */
-    router_group &head(std::string_view path, HandlerPtr handler)
+    router_group &head(std::string_view path, Handler &&handler)
     {
-        return add_route(HttpMethod::HEAD, path, handler);
+        return add_route(HttpMethod::HEAD, path, std::move(handler));
     }
 
     /**
@@ -318,9 +318,9 @@ public:
      * group->options("/users/\\*", cors_preflight_handler);
      * ```
      */
-    router_group &options(std::string_view path, HandlerPtr handler)
+    router_group &options(std::string_view path, Handler &&handler)
     {
-        return add_route(HttpMethod::OPTIONS, path, handler);
+        return add_route(HttpMethod::OPTIONS, path, std::move(handler));
     }
 
     /**
@@ -341,14 +341,14 @@ public:
      * group->any("/debug", debug_handler);  // Responds to all HTTP methods
      * ```
      */
-    router_group &any(std::string_view path, HandlerPtr handler)
+    router_group &any(std::string_view path, Handler &&handler)
     {
         static const std::vector<HttpMethod> all_methods = {
             HttpMethod::GET,   HttpMethod::POST, HttpMethod::PUT,    HttpMethod::DELETE,
             HttpMethod::PATCH, HttpMethod::HEAD, HttpMethod::OPTIONS};
 
         for (auto method : all_methods) {
-            add_route(method, path, handler);
+            add_route(method, path, std::move(handler));
         }
         return *this;
     }
@@ -568,26 +568,19 @@ private:
      * registering the route with the main router.
      * 此方法在向主路由器注册路由之前，将所有中间件（继承的+自己的）应用到处理器。
      */
-    router_group &add_route(HttpMethod method, std::string_view path, HandlerPtr handler)
+    router_group &add_route(HttpMethod method, std::string_view path, Handler &&handler)
     {
         std::string full_path = build_full_path(path);
 
-        // Apply all middlewares to the handler (from parent to child)
-        // 将所有中间件应用到处理器（从父到子）
-        HandlerPtr wrapped_handler = handler;
-        auto all_middlewares = get_all_middlewares();
+        // 将对象放进 shared_ptr 以兼容中间件签名
+        auto wrapped_handler = std::make_shared<Handler>(std::move(handler));
 
-        // Apply middlewares in order (first middleware wraps the original handler,
-        // second middleware wraps the result, etc.)
-        // 按顺序应用中间件（第一个中间件包装原始处理器，第二个中间件包装结果，等等）
-        for (auto it = all_middlewares.rbegin(); it != all_middlewares.rend(); ++it) {
-            (*it)(wrapped_handler);
+        for (auto &mw : get_all_middlewares()) {
+            mw(wrapped_handler);
         }
 
-        // Register the wrapped handler with the main router
-        // 向主路由器注册包装后的处理器
-        router_.add_route(method, full_path, wrapped_handler);
-
+        // 将最终处理器对象移动到路由器
+        router_.add_route(method, full_path, std::move(*wrapped_handler));
         return *this;
     }
 };

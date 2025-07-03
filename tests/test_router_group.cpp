@@ -155,19 +155,14 @@ private:
         router<TestHandler> r;
         auto api_group = r.group("/api");
 
-        auto handler = std::make_shared<TestHandler>("users_handler");
-        api_group->get("/users", handler);
+        api_group->get("/users", TestHandler("users_handler"));
 
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
+        std::map<std::string, std::string> params, query_params;
+        auto result = r.find_route(HttpMethod::GET, "/api/users", params, query_params);
 
-        int result =
-            r.find_route(HttpMethod::GET, "/api/users", found_handler, params, query_params);
-
-        assert(result == 0);
-        assert(found_handler != nullptr);
-        assert(found_handler->name == "users_handler");
+        assert(result.has_value());
+        assert(result->get().handler != nullptr);
+        assert(result->get().handler->name == "users_handler");
 
         test_passed("Group route registration");
     }
@@ -180,19 +175,14 @@ private:
         auto api_group = r.group("/api");
         auto v1_group = api_group->group("/v1");
 
-        auto handler = std::make_shared<TestHandler>("v1_users_handler");
-        v1_group->get("/users", handler);
+        api_group->get("/users", TestHandler("v1_users_handler"));
 
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
+        std::map<std::string, std::string> params, query_params;
+        auto result = r.find_route(HttpMethod::GET, "/api/v1/users", params, query_params);
 
-        int result =
-            r.find_route(HttpMethod::GET, "/api/v1/users", found_handler, params, query_params);
-
-        assert(result == 0);
-        assert(found_handler != nullptr);
-        assert(found_handler->name == "v1_users_handler");
+        assert(result.has_value());
+        assert(result->get().handler != nullptr);
+        assert(result->get().handler->name == "v1_users_handler");
 
         test_passed("Nested groups");
     }
@@ -209,19 +199,14 @@ private:
             handler = std::make_shared<TestHandler>(original_handler->name + "_with_middleware");
         });
 
-        auto original_handler = std::make_shared<TestHandler>("original_handler");
-        api_group->get("/test", original_handler);
+        api_group->get("/test", TestHandler("original_handler"));
 
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
+        std::map<std::string, std::string> params, query_params;
+        auto result = r.find_route(HttpMethod::GET, "/api/test", params, query_params);
 
-        int result =
-            r.find_route(HttpMethod::GET, "/api/test", found_handler, params, query_params);
-
-        assert(result == 0);
-        assert(found_handler != nullptr);
-        assert(found_handler->name == "original_handler_with_middleware");
+        assert(result.has_value());
+        assert(result->get().handler != nullptr);
+        assert(result->get().handler->name == "original_handler_with_middleware");
 
         test_passed("Middleware application");
     }
@@ -271,20 +256,15 @@ private:
         auto v1_group = api_group->group("/v1");
         auto users_group = v1_group->group("/users");
 
-        auto handler = std::make_shared<TestHandler>("deep_handler");
-        users_group->get("/:id", handler);
+        users_group->get("/:id", TestHandler("deep_handler"));
 
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
+        std::map<std::string, std::string> params, query_params;
+        auto result = r.find_route(HttpMethod::GET, "/api/v1/users/123", params, query_params);
 
-        int result =
-            r.find_route(HttpMethod::GET, "/api/v1/users/123", found_handler, params, query_params);
-
-        assert(result == 0);
-        assert(found_handler != nullptr);
-        assert(found_handler->name == "deep_handler");
-        assert(params["id"] == "123");
+        assert(result.has_value());
+        assert(result->get().handler != nullptr);
+        assert(result->get().handler->name == "deep_handler");
+        assert(result->get().params["id"] == "123");
 
         test_passed("Multiple nested groups");
     }
@@ -308,19 +288,14 @@ private:
             handler = std::make_shared<TestHandler>(original_handler->name + "_child_middleware");
         });
 
-        auto original_handler = std::make_shared<TestHandler>("handler");
-        v1_group->get("/test", original_handler);
+        v1_group->get("/test", TestHandler("handler"));
 
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
+        std::map<std::string, std::string> params, query_params;
+        auto result = r.find_route(HttpMethod::GET, "/api/v1/test", params, query_params);
 
-        int result =
-            r.find_route(HttpMethod::GET, "/api/v1/test", found_handler, params, query_params);
-
-        assert(result == 0);
-        assert(found_handler != nullptr);
-        assert(found_handler->name == "handler_child_middleware_parent_middleware");
+        assert(result.has_value());
+        assert(result->get().handler != nullptr);
+        assert(result->get().handler->name == "handler_child_middleware_parent_middleware");
 
         test_passed("Group middleware inheritance");
     }
@@ -332,13 +307,13 @@ private:
         router<TestHandler> r;
         auto api_group = r.group("/api");
 
-        api_group->get("/test", std::make_shared<TestHandler>("get_handler"));
-        api_group->post("/test", std::make_shared<TestHandler>("post_handler"));
-        api_group->put("/test", std::make_shared<TestHandler>("put_handler"));
-        api_group->delete_("/test", std::make_shared<TestHandler>("delete_handler"));
-        api_group->patch("/test", std::make_shared<TestHandler>("patch_handler"));
-        api_group->head("/test", std::make_shared<TestHandler>("head_handler"));
-        api_group->options("/test", std::make_shared<TestHandler>("options_handler"));
+        api_group->get("/test", TestHandler("get_handler"));
+        api_group->post("/test", TestHandler("post_handler"));
+        api_group->put("/test", TestHandler("put_handler"));
+        api_group->delete_("/test", TestHandler("delete_handler"));
+        api_group->patch("/test", TestHandler("patch_handler"));
+        api_group->head("/test", TestHandler("head_handler"));
+        api_group->options("/test", TestHandler("options_handler"));
 
         std::vector<std::pair<HttpMethod, std::string>> test_cases = {
             {HttpMethod::GET, "get_handler"},        {HttpMethod::POST, "post_handler"},
@@ -347,15 +322,12 @@ private:
             {HttpMethod::OPTIONS, "options_handler"}};
 
         for (const auto &[method, expected_name] : test_cases) {
-            std::shared_ptr<TestHandler> found_handler;
-            std::map<std::string, std::string> params;
-            std::map<std::string, std::string> query_params;
+            std::map<std::string, std::string> params, query_params;
+            auto result = r.find_route(method, "/api/test", params, query_params);
 
-            int result = r.find_route(method, "/api/test", found_handler, params, query_params);
-
-            assert(result == 0);
-            assert(found_handler != nullptr);
-            assert(found_handler->name == expected_name);
+            assert(result.has_value());
+            assert(result->get().handler != nullptr);
+            assert(result->get().handler->name == expected_name);
         }
 
         test_passed("All HTTP methods");
@@ -368,23 +340,19 @@ private:
         router<TestHandler> r;
         auto api_group = r.group("/api");
 
-        auto handler = std::make_shared<TestHandler>("any_handler");
-        api_group->any("/any", handler);
+        api_group->any("/any", TestHandler("any_handler"));
 
         std::vector<HttpMethod> methods = {HttpMethod::GET,    HttpMethod::POST,  HttpMethod::PUT,
                                            HttpMethod::DELETE, HttpMethod::PATCH, HttpMethod::HEAD,
                                            HttpMethod::OPTIONS};
 
         for (auto method : methods) {
-            std::shared_ptr<TestHandler> found_handler;
-            std::map<std::string, std::string> params;
-            std::map<std::string, std::string> query_params;
+            std::map<std::string, std::string> params, query_params;
+            auto result = r.find_route(method, "/api/any", params, query_params);
 
-            int result = r.find_route(method, "/api/any", found_handler, params, query_params);
-
-            assert(result == 0);
-            assert(found_handler != nullptr);
-            assert(found_handler->name == "any_handler");
+            assert(result.has_value());
+            assert(result->get().handler != nullptr);
+            assert(result->get().handler->name == "any_handler");
         }
 
         test_passed("Any method registration");
@@ -401,34 +369,31 @@ private:
 
         // Complex parameterized routes
         api_group->get("/users/:userId/posts/:postId/comments/:commentId",
-                       std::make_shared<TestHandler>("complex_handler"));
+                       TestHandler("complex_handler"));
 
         // Routes with multiple parameters and static parts
         api_group->get("/organizations/:orgId/projects/:projectId/files/*",
-                       std::make_shared<TestHandler>("wildcard_handler"));
+                       TestHandler("wildcard_handler"));
 
         // Test complex parameter extraction
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
+        std::map<std::string, std::string> params, query_params;
+        auto result = r.find_route(HttpMethod::GET, "/api/v1/users/123/posts/456/comments/789",
+                                   params, query_params);
 
-        int result = r.find_route(HttpMethod::GET, "/api/v1/users/123/posts/456/comments/789",
-                                  found_handler, params, query_params);
-
-        assert(result == 0);
-        assert(params["userId"] == "123");
-        assert(params["postId"] == "456");
-        assert(params["commentId"] == "789");
+        assert(result.has_value());
+        assert(result->get().params["userId"] == "123");
+        assert(result->get().params["postId"] == "456");
+        assert(result->get().params["commentId"] == "789");
 
         // Test wildcard route
         result = r.find_route(HttpMethod::GET,
                               "/api/v1/organizations/myorg/projects/proj1/files/src/main.cpp",
-                              found_handler, params, query_params);
+                              params, query_params);
 
-        assert(result == 0);
-        assert(params["orgId"] == "myorg");
-        assert(params["projectId"] == "proj1");
-        assert(params["*"] == "src/main.cpp");
+        assert(result.has_value());
+        assert(result->get().params["orgId"] == "myorg");
+        assert(result->get().params["projectId"] == "proj1");
+        assert(result->get().params["*"] == "src/main.cpp");
 
         test_passed("Complex routing patterns");
     }
@@ -441,10 +406,9 @@ private:
         auto api_group = r.group("/api");
 
         // Routes with various parameter patterns
-        api_group->get("/users/:id", std::make_shared<TestHandler>("user_handler"));
-        api_group->get("/posts/:id/comments/:commentId",
-                       std::make_shared<TestHandler>("comment_handler"));
-        api_group->get("/files/:filename", std::make_shared<TestHandler>("file_handler"));
+        api_group->get("/users/:id", TestHandler("user_handler"));
+        api_group->get("/posts/:id/comments/:commentId", TestHandler("comment_handler"));
+        api_group->get("/files/:filename", TestHandler("file_handler"));
 
         // Test different parameter values
         std::vector<std::tuple<std::string, std::map<std::string, std::string>>> test_cases = {
@@ -455,15 +419,12 @@ private:
             {"/api/files/img-2023.jpg", {{"filename", "img-2023.jpg"}}}};
 
         for (const auto &[path, expected_params] : test_cases) {
-            std::shared_ptr<TestHandler> found_handler;
-            std::map<std::string, std::string> params;
-            std::map<std::string, std::string> query_params;
+            std::map<std::string, std::string> params, query_params;
+            auto result = r.find_route(HttpMethod::GET, path, params, query_params);
 
-            int result = r.find_route(HttpMethod::GET, path, found_handler, params, query_params);
-
-            assert(result == 0);
+            assert(result.has_value());
             for (const auto &[key, value] : expected_params) {
-                assert(params[key] == value);
+                assert(result->get().params[key] == value);
             }
         }
 
@@ -477,7 +438,7 @@ private:
         router<TestHandler> r;
         auto static_group = r.group("/static");
 
-        static_group->get("/*", std::make_shared<TestHandler>("static_handler"));
+        static_group->get("/*", TestHandler("static_handler"));
 
         std::vector<std::pair<std::string, std::string>> test_cases = {
             {"/static/css/style.css", "css/style.css"},
@@ -487,14 +448,11 @@ private:
             {"/static/deep/nested/path/file.txt", "deep/nested/path/file.txt"}};
 
         for (const auto &[path, expected_wildcard] : test_cases) {
-            std::shared_ptr<TestHandler> found_handler;
-            std::map<std::string, std::string> params;
-            std::map<std::string, std::string> query_params;
+            std::map<std::string, std::string> params, query_params;
+            auto result = r.find_route(HttpMethod::GET, path, params, query_params);
 
-            int result = r.find_route(HttpMethod::GET, path, found_handler, params, query_params);
-
-            assert(result == 0);
-            assert(params["*"] == expected_wildcard);
+            assert(result.has_value());
+            assert(result->get().params["*"] == expected_wildcard);
         }
 
         test_passed("Wildcard routes");
@@ -523,18 +481,13 @@ private:
             handler = std::make_shared<TestHandler>(original->name + "_logging");
         });
 
-        auto original_handler = std::make_shared<TestHandler>("handler");
-        api_group->get("/test", original_handler);
+        api_group->get("/test", TestHandler("handler"));
 
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
+        std::map<std::string, std::string> params, query_params;
+        auto result = r.find_route(HttpMethod::GET, "/api/test", params, query_params);
 
-        int result =
-            r.find_route(HttpMethod::GET, "/api/test", found_handler, params, query_params);
-
-        assert(result == 0);
-        assert(found_handler->name == "handler_logging_cors_auth");
+        assert(result.has_value());
+        assert(result->get().handler->name == "handler_logging_cors_auth");
 
         test_passed("Middleware chains");
     }
@@ -547,19 +500,14 @@ private:
         auto api_group = r.group("/api");
 
         // Test invalid routes
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
-
-        // Non-existent route
-        int result =
-            r.find_route(HttpMethod::GET, "/api/nonexistent", found_handler, params, query_params);
-        assert(result == -1);
+        std::map<std::string, std::string> params, query_params;
+        auto result = r.find_route(HttpMethod::GET, "/api/nonexistent", params, query_params);
+        assert(!result.has_value());
 
         // Wrong method
-        api_group->get("/users", std::make_shared<TestHandler>("get_only"));
-        result = r.find_route(HttpMethod::POST, "/api/users", found_handler, params, query_params);
-        assert(result == -1);
+        api_group->get("/users", TestHandler("get_only"));
+        result = r.find_route(HttpMethod::POST, "/api/users", params, query_params);
+        assert(!result.has_value());
 
         test_passed("Error handling");
     }
@@ -572,35 +520,30 @@ private:
 
         // Empty prefix group
         auto empty_group = r.group("");
-        empty_group->get("/test", std::make_shared<TestHandler>("empty_prefix"));
+        empty_group->get("/test", TestHandler("empty_prefix"));
 
         // Root path group
         auto root_group = r.group("/");
-        root_group->get("/root", std::make_shared<TestHandler>("root_prefix"));
+        root_group->get("/root", TestHandler("root_prefix"));
 
         // Very long paths
         auto deep_group = r.group("/very/deep/nested/group/structure");
-        deep_group->get("/endpoint", std::make_shared<TestHandler>("deep_handler"));
+        deep_group->get("/endpoint", TestHandler("deep_handler"));
 
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
+        std::map<std::string, std::string> params, query_params;
+        auto result = r.find_route(HttpMethod::GET, "/test", params, query_params);
 
-        // Test empty prefix
-        int result = r.find_route(HttpMethod::GET, "/test", found_handler, params, query_params);
-        assert(result == 0);
-        assert(found_handler->name == "empty_prefix");
+        assert(result.has_value());
+        assert(result->get().handler->name == "empty_prefix");
 
-        // Test root prefix
-        result = r.find_route(HttpMethod::GET, "/root", found_handler, params, query_params);
-        assert(result == 0);
-        assert(found_handler->name == "root_prefix");
+        result = r.find_route(HttpMethod::GET, "/root", params, query_params);
+        assert(result.has_value());
+        assert(result->get().handler->name == "root_prefix");
 
-        // Test deep nesting
-        result = r.find_route(HttpMethod::GET, "/very/deep/nested/group/structure/endpoint",
-                              found_handler, params, query_params);
-        assert(result == 0);
-        assert(found_handler->name == "deep_handler");
+        result = r.find_route(HttpMethod::GET, "/very/deep/nested/group/structure/endpoint", params,
+                              query_params);
+        assert(result.has_value());
+        assert(result->get().handler->name == "deep_handler");
 
         test_passed("Edge cases");
     }
@@ -613,18 +556,14 @@ private:
         auto api_group = r.group("/api");
 
         // Register conflicting routes (last one should win)
-        api_group->get("/users", std::make_shared<TestHandler>("first_handler"));
-        api_group->get("/users", std::make_shared<TestHandler>("second_handler"));
+        api_group->get("/users", TestHandler("first_handler"));
+        api_group->get("/users", TestHandler("second_handler"));
 
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
+        std::map<std::string, std::string> params, query_params;
+        auto result = r.find_route(HttpMethod::GET, "/api/users", params, query_params);
 
-        int result =
-            r.find_route(HttpMethod::GET, "/api/users", found_handler, params, query_params);
-
-        assert(result == 0);
-        assert(found_handler->name == "second_handler");
+        assert(result.has_value());
+        assert(result->get().handler->name == "second_handler");
 
         test_passed("Route conflicts");
     }
@@ -636,19 +575,16 @@ private:
         router<TestHandler> r;
         auto api_group = r.group("/api");
 
-        api_group->get("/search", std::make_shared<TestHandler>("search_handler"));
+        api_group->get("/search", TestHandler("search_handler"));
 
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
+        std::map<std::string, std::string> params, query_params;
+        auto result =
+            r.find_route(HttpMethod::GET, "/api/search?q=hello%20world&filter=type%3Duser", params,
+                         query_params);
 
-        // Test URL encoded query parameters
-        int result = r.find_route(HttpMethod::GET, "/api/search?q=hello%20world&filter=type%3Duser",
-                                  found_handler, params, query_params);
-
-        assert(result == 0);
-        assert(query_params["q"] == "hello world");
-        assert(query_params["filter"] == "type=user");
+        assert(result.has_value());
+        assert(result->get().query_params["q"] == "hello world");
+        assert(result->get().query_params["filter"] == "type=user");
 
         test_passed("URL encoding");
     }
@@ -668,22 +604,19 @@ private:
         // Register many routes
         for (int i = 0; i < num_routes; ++i) {
             std::string path = "/route" + std::to_string(i);
-            api_group->get(path, std::make_shared<TestHandler>("handler_" + std::to_string(i)));
+            api_group->get(path, TestHandler("handler_" + std::to_string(i)));
         }
 
         double registration_time = timer.elapsed_ms();
 
         // Test route lookup performance
         timer.reset();
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
-
         for (int i = 0; i < 100; ++i) {
             int route_id = i % num_routes;
             std::string path = "/api/route" + std::to_string(route_id);
-            int result = r.find_route(HttpMethod::GET, path, found_handler, params, query_params);
-            assert(result == 0);
+            std::map<std::string, std::string> params, query_params;
+            auto result = r.find_route(HttpMethod::GET, path, params, query_params);
+            assert(result.has_value());
         }
 
         double lookup_time = timer.elapsed_ms();
@@ -715,7 +648,7 @@ private:
             groups.push_back(next_group);
         }
 
-        groups.back()->get("/endpoint", std::make_shared<TestHandler>("deep_handler"));
+        groups.back()->get("/endpoint", TestHandler("deep_handler"));
         double creation_time = timer.elapsed_ms();
 
         // Test lookup performance
@@ -726,14 +659,10 @@ private:
         }
         deep_path += "/endpoint";
 
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
-
         for (int i = 0; i < 100; ++i) {
-            int result =
-                r.find_route(HttpMethod::GET, deep_path, found_handler, params, query_params);
-            assert(result == 0);
+            std::map<std::string, std::string> params, query_params;
+            auto result = r.find_route(HttpMethod::GET, deep_path, params, query_params);
+            assert(result.has_value());
         }
 
         double lookup_time = timer.elapsed_ms();
@@ -764,19 +693,15 @@ private:
             });
         }
 
-        api_group->get("/test", std::make_shared<TestHandler>("base_handler"));
+        api_group->get("/test", TestHandler("base_handler"));
         double middleware_time = timer.elapsed_ms();
 
         // Test middleware application performance
         timer.reset();
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
-
         for (int i = 0; i < 100; ++i) {
-            int result =
-                r.find_route(HttpMethod::GET, "/api/test", found_handler, params, query_params);
-            assert(result == 0);
+            std::map<std::string, std::string> params, query_params;
+            auto result = r.find_route(HttpMethod::GET, "/api/test", params, query_params);
+            assert(result.has_value());
         }
 
         double lookup_time = timer.elapsed_ms();
@@ -799,7 +724,7 @@ private:
         // Setup routes
         for (int i = 0; i < 100; ++i) {
             api_group->get("/route" + std::to_string(i),
-                           std::make_shared<TestHandler>("handler_" + std::to_string(i)));
+                           TestHandler("handler_" + std::to_string(i)));
         }
 
         const int num_threads = 8;
@@ -816,15 +741,11 @@ private:
                 std::uniform_int_distribution<> dis(0, 99);
 
                 for (int i = 0; i < requests_per_thread; ++i) {
-                    std::shared_ptr<TestHandler> found_handler;
-                    std::map<std::string, std::string> params;
-                    std::map<std::string, std::string> query_params;
-
                     int route_id = dis(gen);
                     std::string path = "/api/route" + std::to_string(route_id);
-                    int result =
-                        r.find_route(HttpMethod::GET, path, found_handler, params, query_params);
-                    assert(result == 0);
+                    std::map<std::string, std::string> params, query_params;
+                    auto result = r.find_route(HttpMethod::GET, path, params, query_params);
+                    assert(result.has_value());
                 }
             }));
         }
@@ -853,25 +774,21 @@ private:
         auto api_group = r.group("/api");
 
         // Setup parameterized route
-        api_group->get("/users/:id/posts/:postId", std::make_shared<TestHandler>("cached_handler"));
+        api_group->get("/users/:id/posts/:postId", TestHandler("cached_handler"));
 
         Timer timer;
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
-
-        // First lookup (no cache)
-        int result = r.find_route(HttpMethod::GET, "/api/users/123/posts/456", found_handler,
-                                  params, query_params);
+        std::map<std::string, std::string> params, query_params;
+        auto result =
+            r.find_route(HttpMethod::GET, "/api/users/123/posts/456", params, query_params);
         double first_lookup = timer.elapsed_ms();
-        assert(result == 0);
+        assert(result.has_value());
 
         // Subsequent lookups (with cache)
         timer.reset();
         for (int i = 0; i < 1000; ++i) {
-            result = r.find_route(HttpMethod::GET, "/api/users/123/posts/456", found_handler,
-                                  params, query_params);
-            assert(result == 0);
+            result =
+                r.find_route(HttpMethod::GET, "/api/users/123/posts/456", params, query_params);
+            assert(result.has_value());
         }
         double cached_lookups = timer.elapsed_ms();
 
@@ -914,20 +831,16 @@ private:
         // Register routes to respective groups
         for (const auto &[path, handler_name, group_name] : group_routes) {
             if (group_name == "api_v1") {
-                api_v1->get(path, std::make_shared<TestHandler>(handler_name));
+                api_v1->get(path, TestHandler(handler_name));
             } else if (group_name == "admin") {
-                admin_group->get(path, std::make_shared<TestHandler>(handler_name));
+                admin_group->get(path, TestHandler(handler_name));
             } else if (group_name == "public") {
-                public_group->get(path, std::make_shared<TestHandler>(handler_name));
+                public_group->get(path, TestHandler(handler_name));
             }
         }
 
         // Test all routes
         for (const auto &[path, handler_name, group_name] : group_routes) {
-            std::shared_ptr<TestHandler> found_handler;
-            std::map<std::string, std::string> params;
-            std::map<std::string, std::string> query_params;
-
             std::string full_path;
             if (group_name == "api_v1") {
                 full_path = "/api/v1" + path;
@@ -935,12 +848,12 @@ private:
                 full_path = "/" + group_name + path;
             }
 
-            int result =
-                r.find_route(HttpMethod::GET, full_path, found_handler, params, query_params);
-            assert(result == 0);
-            assert(found_handler != nullptr);
-            assert(found_handler->name == handler_name);
-            assert(params.empty());
+            std::map<std::string, std::string> params, query_params;
+            auto result = r.find_route(HttpMethod::GET, full_path, params, query_params);
+            assert(result.has_value());
+            assert(result->get().handler != nullptr);
+            assert(result->get().handler->name == handler_name);
+            assert(result->get().params.empty());
         }
 
         test_passed("Group static routes comprehensive");
@@ -957,19 +870,17 @@ private:
         auto v2_group = api_group->group("/v2");
 
         // Single parameter routes in different groups
-        v1_group->get("/users/:id", std::make_shared<TestHandler>("v1_user_by_id"));
-        v1_group->get("/posts/:slug", std::make_shared<TestHandler>("v1_post_by_slug"));
+        v1_group->get("/users/:id", TestHandler("v1_user_by_id"));
+        v1_group->get("/posts/:slug", TestHandler("v1_post_by_slug"));
 
-        v2_group->get("/users/:userId", std::make_shared<TestHandler>("v2_user_by_id"));
-        v2_group->get("/articles/:articleId", std::make_shared<TestHandler>("v2_article_by_id"));
+        v2_group->get("/users/:userId", TestHandler("v2_user_by_id"));
+        v2_group->get("/articles/:articleId", TestHandler("v2_article_by_id"));
 
         // Multiple parameter routes
-        v1_group->get("/users/:userId/posts/:postId",
-                      std::make_shared<TestHandler>("v1_user_post"));
-        v2_group->get("/organizations/:orgId/projects/:projectId",
-                      std::make_shared<TestHandler>("v2_org_project"));
+        v1_group->get("/users/:userId/posts/:postId", TestHandler("v1_user_post"));
+        v2_group->get("/organizations/:orgId/projects/:projectId", TestHandler("v2_org_project"));
         v2_group->get("/users/:userId/profile/:profileId/settings/:settingId",
-                      std::make_shared<TestHandler>("v2_complex_route"));
+                      TestHandler("v2_complex_route"));
 
         // Test cases with expected parameters
         std::vector<std::tuple<std::string, std::string, std::map<std::string, std::string>>>
@@ -995,18 +906,15 @@ private:
                            {{"userId", "john"}, {"profileId", "main"}, {"settingId", "privacy"}}}};
 
         for (const auto &[path, expected_handler, expected_params] : test_cases) {
-            std::shared_ptr<TestHandler> found_handler;
-            std::map<std::string, std::string> params;
-            std::map<std::string, std::string> query_params;
-
-            int result = r.find_route(HttpMethod::GET, path, found_handler, params, query_params);
-            assert(result == 0);
-            assert(found_handler != nullptr);
-            assert(found_handler->name == expected_handler);
-            assert(params.size() == expected_params.size());
+            std::map<std::string, std::string> params, query_params;
+            auto result = r.find_route(HttpMethod::GET, path, params, query_params);
+            assert(result.has_value());
+            assert(result->get().handler != nullptr);
+            assert(result->get().handler->name == expected_handler);
+            assert(result->get().params.size() == expected_params.size());
 
             for (const auto &[key, value] : expected_params) {
-                assert(params[key] == value);
+                assert(result->get().params[key] == value);
             }
         }
 
@@ -1024,10 +932,10 @@ private:
         auto cdn_group = r.group("/cdn");
 
         // Different levels of wildcard routes
-        static_group->get("/*", std::make_shared<TestHandler>("static_files"));
-        assets_group->get("/js/*", std::make_shared<TestHandler>("js_assets"));
-        assets_group->get("/css/*", std::make_shared<TestHandler>("css_assets"));
-        cdn_group->get("/:version/files/*", std::make_shared<TestHandler>("versioned_files"));
+        static_group->get("/*", TestHandler("static_files"));
+        assets_group->get("/js/*", TestHandler("js_assets"));
+        assets_group->get("/css/*", TestHandler("css_assets"));
+        cdn_group->get("/:version/files/*", TestHandler("versioned_files"));
 
         // Test cases with expected wildcards and parameters
         std::vector<std::tuple<std::string, std::string, std::map<std::string, std::string>>>
@@ -1053,17 +961,14 @@ private:
                  {{"version", "2023.1"}, {"*", "documents/manual.pdf"}}}};
 
         for (const auto &[path, expected_handler, expected_params] : test_cases) {
-            std::shared_ptr<TestHandler> found_handler;
-            std::map<std::string, std::string> params;
-            std::map<std::string, std::string> query_params;
-
-            int result = r.find_route(HttpMethod::GET, path, found_handler, params, query_params);
-            assert(result == 0);
-            assert(found_handler != nullptr);
-            assert(found_handler->name == expected_handler);
+            std::map<std::string, std::string> params, query_params;
+            auto result = r.find_route(HttpMethod::GET, path, params, query_params);
+            assert(result.has_value());
+            assert(result->get().handler != nullptr);
+            assert(result->get().handler->name == expected_handler);
 
             for (const auto &[key, value] : expected_params) {
-                assert(params[key] == value);
+                assert(result->get().params[key] == value);
             }
         }
 
@@ -1097,9 +1002,9 @@ private:
         });
 
         // Add routes at different levels
-        api_group->get("/health", std::make_shared<TestHandler>("health"));
-        v1_group->get("/status", std::make_shared<TestHandler>("status"));
-        admin_group->get("/users", std::make_shared<TestHandler>("admin_users"));
+        api_group->get("/health", TestHandler("health"));
+        v1_group->get("/status", TestHandler("status"));
+        admin_group->get("/users", TestHandler("admin_users"));
 
         // Test middleware inheritance
         std::vector<std::tuple<std::string, std::string>> test_cases = {
@@ -1109,14 +1014,11 @@ private:
         };
 
         for (const auto &[path, expected_handler] : test_cases) {
-            std::shared_ptr<TestHandler> found_handler;
-            std::map<std::string, std::string> params;
-            std::map<std::string, std::string> query_params;
-
-            int result = r.find_route(HttpMethod::GET, path, found_handler, params, query_params);
-            assert(result == 0);
-            assert(found_handler != nullptr);
-            assert(found_handler->name == expected_handler);
+            std::map<std::string, std::string> params, query_params;
+            auto result = r.find_route(HttpMethod::GET, path, params, query_params);
+            assert(result.has_value());
+            assert(result->get().handler != nullptr);
+            assert(result->get().handler->name == expected_handler);
         }
 
         test_passed("Group middleware comprehensive");
@@ -1148,8 +1050,8 @@ private:
             // Add routes to each group
             for (int r = 0; r < routes_per_group; ++r) {
                 std::string path = "/route" + std::to_string(r);
-                group->get(path, std::make_shared<TestHandler>("handler_" + std::to_string(g) +
-                                                               "_" + std::to_string(r)));
+                group->get(path,
+                           TestHandler("handler_" + std::to_string(g) + "_" + std::to_string(r)));
             }
 
             groups.push_back(group);
@@ -1163,44 +1065,24 @@ private:
 
         // Test lookup performance
         timer.reset();
-        std::shared_ptr<TestHandler> found_handler;
-        std::map<std::string, std::string> params;
-        std::map<std::string, std::string> query_params;
-
-        const int lookup_iterations = 500;
-        int successful_lookups = 0;
-
-        for (int i = 0; i < lookup_iterations; ++i) {
+        for (int i = 0; i < 500; ++i) {
             int group_id = i % num_groups;
             int route_id = i % routes_per_group;
 
             std::string path =
                 "/group" + std::to_string(group_id) + "/route" + std::to_string(route_id);
-            int result = r.find_route(HttpMethod::GET, path, found_handler, params, query_params);
+            std::map<std::string, std::string> params, query_params;
+            auto result = r.find_route(HttpMethod::GET, path, params, query_params);
 
-            if (result == 0) {
-                successful_lookups++;
-            }
-
-            params.clear();
-            query_params.clear();
+            assert(result.has_value());
         }
 
         double lookup_time = timer.elapsed_ms();
 
-        std::cout << "  Performed " << lookup_iterations << " lookups in " << lookup_time << "ms"
+        std::cout << "  Performed 500 lookups in " << lookup_time << "ms" << std::endl;
+        std::cout << "  Throughput: " << (500 / lookup_time * 1000.0) << " lookups/second"
                   << std::endl;
-        std::cout << "  Successful lookups: " << successful_lookups << "/" << lookup_iterations
-                  << std::endl;
-        std::cout << "  Average lookup time: " << lookup_time / lookup_iterations << "ms"
-                  << std::endl;
-        std::cout << "  Throughput: " << (lookup_iterations / lookup_time * 1000.0)
-                  << " lookups/second" << std::endl;
-
-        assert(successful_lookups == lookup_iterations);
 
         test_passed("Group large scale performance");
     }
 };
-
-
